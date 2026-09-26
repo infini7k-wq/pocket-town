@@ -7,7 +7,10 @@ import {
   SCENARIOS,
   TRAITS,
   bestStars,
+  exportTransferCode,
   formatDate,
+  importTransfer,
+  parseTransferCode,
   formatNumber,
   formatYen,
   getRank,
@@ -245,8 +248,71 @@ export function StartScreen() {
             </ul>
           </section>
         )}
+        <TransferSection hasData={!!raw || hall.length > 0} />
         <p className="mt-4 text-center text-[11px] font-bold text-slate-400">データはこのブラウザに自動保存されます</p>
       </div>
     </main>
+  );
+}
+
+/** セーブデータの引っ越し：別の URL・別の端末に、セーブと殿堂を移す */
+function TransferSection({ hasData }: { hasData: boolean }) {
+  const [open, setOpen] = useState(false);
+  const [code, setCode] = useState("");
+  const [input, setInput] = useState("");
+  const [message, setMessage] = useState<{ tone: "good" | "bad"; text: string } | null>(null);
+
+  const makeCode = async () => {
+    const save = parseSave(readKey(SAVE_KEY));
+    const hall = parseHall(readKey(HALL_KEY));
+    const c = await exportTransferCode({ save, hall });
+    setCode(c);
+    try {
+      await navigator.clipboard.writeText(c);
+      setMessage({ tone: "good", text: "コピーしました。移したい先のタイトル画面で「読み込む」に貼り付けてください。" });
+    } catch {
+      setMessage({ tone: "good", text: "下の文字をすべて選択してコピーしてください。" });
+    }
+  };
+
+  const load = async () => {
+    const bundle = await parseTransferCode(input);
+    if (!bundle) {
+      setMessage({ tone: "bad", text: "読み込めませんでした。コピーした文字を最後まで貼り付けてください。" });
+      return;
+    }
+    if (bundle.save && parseSave(readKey(SAVE_KEY)) && !window.confirm("この端末の今のセーブは上書きされます。読み込みますか？")) return;
+    importTransfer(bundle);
+    // タイトル画面の表示を更新する
+    window.location.reload();
+  };
+
+  return (
+    <section className="mt-4 rounded-3xl bg-white/80 p-4 shadow ring-1 ring-slate-900/5">
+      <button type="button" onClick={() => setOpen((v) => !v)} className="flex w-full items-center justify-between text-left" aria-expanded={open}>
+        <span className="text-sm font-black text-slate-700">📦 セーブデータの引っ越し</span>
+        <span className="text-xs font-bold text-slate-400">{open ? "閉じる" : "別の端末・URLへ移す"}</span>
+      </button>
+      {open && (
+        <div className="mt-3 space-y-3 text-xs font-bold text-slate-600">
+          <p className="leading-relaxed text-slate-500">セーブはブラウザ（とURL）ごとに保存されます。別の端末や新しいURLで続きを遊ぶときは、元の場所で「書き出す」→ 移したい先で「読み込む」をしてください。殿堂の記録も一緒に移ります。</p>
+          <div className="rounded-2xl bg-slate-50 p-3">
+            <div className="font-black text-slate-700">① 元の場所で書き出す</div>
+            <Button size="sm" className="mt-2 w-full" onClick={makeCode} disabled={!hasData}>
+              📤 書き出してコピー
+            </Button>
+            {code && <textarea readOnly value={code} onFocus={(e) => e.currentTarget.select()} className="mt-2 h-20 w-full rounded-xl border border-slate-200 p-2 font-mono text-[10px]" aria-label="書き出したセーブデータ" />}
+          </div>
+          <div className="rounded-2xl bg-slate-50 p-3">
+            <div className="font-black text-slate-700">② 移したい先で読み込む</div>
+            <textarea value={input} onChange={(e) => setInput(e.target.value)} placeholder="PT2: で始まる文字を貼り付け" className="mt-2 h-20 w-full rounded-xl border border-slate-200 p-2 font-mono text-[10px]" aria-label="読み込むセーブデータ" />
+            <Button size="sm" variant="primary" className="mt-2 w-full" onClick={load} disabled={!input.trim()}>
+              📥 読み込む
+            </Button>
+          </div>
+          {message && <p className={cx("rounded-xl p-2", message.tone === "good" ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700")}>{message.text}</p>}
+        </div>
+      )}
+    </section>
   );
 }

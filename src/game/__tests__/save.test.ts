@@ -57,3 +57,18 @@ describe("セーブ・ロード", () => {
     expect((window as unknown as { localStorage: MemoryStorage }).localStorage.getItem(SAVE_KEY)).toBeNull();
   });
 });
+
+describe("セーブデータの引っ越し", () => {
+  it("セーブと殿堂を文字列にして、別の場所で読み込める", async () => {
+    const { exportTransferCode, parseTransferCode } = await import("../save");
+    const s = createNewGame("引っ越し町", 9);
+    const code = await exportTransferCode({ save: s, hall: [] });
+    expect(code.startsWith("PT2:")).toBe(true);
+    // 圧縮で元の JSON よりずっと短くなる
+    expect(code.length).toBeLessThan(JSON.stringify(s).length / 3);
+    const back = await parseTransferCode(`  ${code}\n`);
+    expect(back?.save).toEqual(s);
+    expect(await parseTransferCode("でたらめ")).toBeNull();
+    expect(await parseTransferCode("PT2:!!!")).toBeNull();
+  });
+});

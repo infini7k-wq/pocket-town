@@ -7,7 +7,16 @@
 
 PC とスマートフォンの両方で遊べ、進行状況はブラウザ（localStorage）に自動保存されます。
 
+**▶ 遊ぶ：https://infini7k-wq.github.io/pocket-town/**
+（iPhone では Safari で開き、共有ボタン →「ホーム画面に追加」でアプリのように遊べます）
+
 ---
+
+## 公開（GitHub Pages）
+
+- `main` ブランチに push すると、GitHub Actions（`.github/workflows/deploy.yml`）が lint・型チェック・テストを通したうえで静的ファイルを書き出し、GitHub Pages に公開します。
+- 手元で公開用のビルドを確認するときは `npm run build:pages`（`out/` に `/pocket-town/` 以下で動くファイルができます）。
+- セーブはブラウザと URL ごとに保存されます。別の端末や URL に移すときは、タイトル画面の「📦 セーブデータの引っ越し」で書き出し → 読み込みをします。
 
 ## 起動方法
 
@@ -18,12 +27,13 @@ npm install
 npm run dev
 ```
 
-http://localhost:3000 を開きます。
+http://localhost:3000 を開きます。同じ Wi‑Fi の iPhone から開発サーバーに入るときは、`.env.local` に `DEV_ORIGINS=192.168.x.x,マシン名.local` を書きます。
 
 | コマンド | 内容 |
 | --- | --- |
 | `npm run dev` | 開発サーバー |
 | `npm run build` / `npm start` | 本番ビルド / 起動 |
+| `npm run build:pages` | GitHub Pages 用の静的書き出し（`out/`） |
 | `npm run lint` | ESLint |
 | `npm run typecheck` | TypeScript 型チェック |
 | `npm test` | ユニットテスト（Vitest） |

@@ -167,3 +167,68 @@ export function recordHall(rec: HallRecord): HallRecord[] {
   }
   return next;
 }
+
+// ---------------- セーブデータの引っ越し（別のURL・別の端末へ） ----------------
+
+const PLAIN_PREFIX = "PT1:";
+/** gzip で圧縮した形式（大きな街でもコピーしやすい長さになる） */
+const GZIP_PREFIX = "PT2:";
+
+export interface TransferBundle {
+  save: GameState | null;
+  hall: HallRecord[];
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let bin = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
+
+function base64ToBytes(b64: string): Uint8Array {
+  return Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+}
+
+async function pipe(bytes: Uint8Array, stream: CompressionStream | DecompressionStream): Promise<Uint8Array> {
+  const out = new Response(new Blob([bytes as BlobPart]).stream().pipeThrough(stream));
+  return new Uint8Array(await out.arrayBuffer());
+}
+
+/** セーブと殿堂を1つの文字列にまとめる（コピーして別の URL・端末に貼り付けられる） */
+export async function exportTransferCode(bundle: TransferBundle): Promise<string> {
+  const bytes = new TextEncoder().encode(JSON.stringify(bundle));
+  if (typeof CompressionStream !== "undefined") return GZIP_PREFIX + bytesToBase64(await pipe(bytes, new CompressionStream("gzip")));
+  return PLAIN_PREFIX + bytesToBase64(bytes);
+}
+
+/** 引っ越し用の文字列を読み取る。形式が違えば null */
+export async function parseTransferCode(code: string): Promise<TransferBundle | null> {
+  const trimmed = code.trim().replace(/\s+/g, "");
+  try {
+    let json: string;
+    if (trimmed.startsWith(GZIP_PREFIX)) json = new TextDecoder().decode(await pipe(base64ToBytes(trimmed.slice(GZIP_PREFIX.length)), new DecompressionStream("gzip")));
+    else if (trimmed.startsWith(PLAIN_PREFIX)) json = new TextDecoder().decode(base64ToBytes(trimmed.slice(PLAIN_PREFIX.length)));
+    else return null;
+    const data = JSON.parse(json) as Partial<TransferBundle>;
+    const save = data.save ? parseSave(JSON.stringify(data.save)) : null;
+    const hall = parseHall(JSON.stringify(data.hall ?? []));
+    if (!save && hall.length === 0) return null;
+    return { save, hall };
+  } catch {
+    return null;
+  }
+}
+
+/** 引っ越しデータを取り込む（セーブは上書き、殿堂は追加） */
+export function importTransfer(bundle: TransferBundle): void {
+  if (bundle.save) saveGame(bundle.save);
+  const st = storage();
+  if (!st) return;
+  let hall = loadHall();
+  for (const rec of [...bundle.hall].reverse()) hall = upsertHall(hall, rec);
+  try {
+    st.setItem(HALL_KEY, JSON.stringify(hall));
+  } catch {
+    // ignore
+  }
+}
