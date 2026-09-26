@@ -1,0 +1,11 @@
+node_modules
+.next
+out
+build
+*.tsbuildinfo
+next-env.d.ts
+.DS_Store
+
+# ローカルの Claude Code 設定
+.claude/
+.env*.local

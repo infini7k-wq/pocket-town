@@ -1,0 +1,32 @@
+// ゲームエンジンの公開 API（UI はここから import する）
+
+export * from "./types";
+export * from "./config";
+export * from "./buildings";
+export * from "./map";
+export * from "./roads";
+export * from "./coverage";
+export * from "./employment";
+export * from "./traffic";
+export * from "./environment";
+export * from "./population";
+export * from "./economy";
+export * from "./analysis";
+export * from "./growth";
+export * from "./events";
+export * from "./voices";
+export * from "./goals";
+export * from "./eras";
+export * from "./requests";
+export * from "./score";
+export * from "./scenarios";
+export * from "./hall";
+export * from "./progression";
+export * from "./traits";
+export * from "./modifiers";
+export * from "./actions";
+export * from "./state";
+export * from "./simulation";
+export * from "./save";
+export * from "./format";
+export { createRng, randomSeed, type Rng } from "./rng";
