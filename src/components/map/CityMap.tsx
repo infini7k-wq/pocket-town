@@ -87,8 +87,6 @@ export function CityMap() {
   const [mouseHover, setHover] = useState<number | null>(null);
   const painting = useRef(false);
   const lastTile = useRef<number | null>(null);
-  // スマホ：指を離したときにタップとして扱う（動かしたらスクロール）
-  const touchStart = useRef<{ x: number; y: number; tile: number } | null>(null);
   // スマホ：公共施設などは「1回目で確認・2回目で建設」
   const [pendingTap, setPendingTap] = useState<{ tool: string; tile: number } | null>(null);
   const pending = pendingTap && pendingTap.tool === tool ? pendingTap.tile : null;
@@ -100,10 +98,13 @@ export function CityMap() {
     setDraftTool(tool);
     if (draft) setDraft(null);
   }
-  const pointers = useRef(new Map<number, { x: number; y: number }>());
-  const pan = useRef<{ x: number; y: number; sl: number; st: number; wy: number } | null>(null);
+  // スマホ（タッチ）の操作状態。指の本数は毎回イベントの e.touches から読むので、状態が残りっぱなしにならない
+  const gridRef = useRef<HTMLDivElement>(null);
+  const gesture = useRef<TouchGesture>({ kind: "none" });
   const strokeTiles = useRef<number[]>([]);
   const strokeHadBefore = useRef<number[]>([]);
+  // ✋ 地図を動かすモード（なぞる道具のときに、1本指で地図・画面を動かせる）
+  const [moveMode, setMoveMode] = useState(false);
 
   useEffect(() => {
     const el = wrapRef.current;
@@ -254,6 +255,11 @@ export function CityMap() {
       applyToolAt(i, false);
       return;
     }
+    // なぞる道具（✋ 地図を動かすモード中のタップ）は下書きに加える
+    if (paintTool) {
+      addToDraft([i]);
+      return;
+    }
     // 1回目のタップは場所の確認（費用と効果範囲を表示）、同じマスをもう一度タップで建設
     if (pending === i) {
       setPendingTap(null);
@@ -271,70 +277,21 @@ export function CityMap() {
     }
   };
 
+  // ---- マウス（PC）：押した瞬間に建て、ドラッグで連続設置 ----
+  // タッチ（スマホ・タブレット）は下の TouchEvent で扱うので、ここではマウスだけを見る
   const onPointerDown = (e: React.PointerEvent) => {
-    if (e.pointerType === "mouse" && e.button !== 0) return;
-    if (e.pointerType !== "mouse" && paintTool) {
-      pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
-      if (pointers.current.size >= 2) {
-        // 2本目の指：なぞっていた分を取り消して、地図を動かすモードへ
-        const stroke = strokeTiles.current;
-        if (stroke.length > 0) setDraft((d) => (d ? { ...d, tiles: d.tiles.filter((j) => !stroke.includes(j) || strokeHadBefore.current.includes(j)) } : d));
-        strokeTiles.current = [];
-        lastTile.current = null;
-        const pts = [...pointers.current.values()];
-        const sc = scrollRef.current;
-        pan.current = { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2, sl: sc?.scrollLeft ?? 0, st: sc?.scrollTop ?? 0, wy: window.scrollY };
-        return;
-      }
-      const i = tileAt(e.clientX, e.clientY);
-      if (i === null) return;
-      capture(e);
-      strokeHadBefore.current = draftTiles ?? [];
-      strokeTiles.current = [i];
-      lastTile.current = i;
-      addToDraft([i]);
-      return;
-    }
+    if (e.pointerType !== "mouse" || e.button !== 0) return;
     const i = tileAt(e.clientX, e.clientY);
     if (i === null) return;
-    if (e.pointerType !== "mouse") {
-      touchStart.current = { x: e.clientX, y: e.clientY, tile: i };
-      return;
-    }
     painting.current = true;
     lastTile.current = i;
     if (tool !== "inspect") capture(e);
     applyToolAt(i, false);
   };
   const onPointerMove = (e: React.PointerEvent) => {
-    if (e.pointerType !== "mouse" && paintTool) {
-      if (!pointers.current.has(e.pointerId)) return;
-      pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
-      const p = pan.current;
-      if (p && pointers.current.size >= 2) {
-        const pts = [...pointers.current.values()];
-        const dx = (pts[0].x + pts[1].x) / 2 - p.x;
-        const dy = (pts[0].y + pts[1].y) / 2 - p.y;
-        const sc = scrollRef.current;
-        if (sc && (sc.scrollHeight > sc.clientHeight + 1 || sc.scrollWidth > sc.clientWidth + 1)) {
-          sc.scrollLeft = p.sl - dx;
-          sc.scrollTop = p.st - dy;
-        } else {
-          window.scrollTo({ top: p.wy - dy });
-        }
-        return;
-      }
-      if (pan.current || lastTile.current === null) return;
-      const i = tileAt(e.clientX, e.clientY);
-      if (i === null || i === lastTile.current) return;
-      const path = gridPath(lastTile.current, i, state.width);
-      lastTile.current = i;
-      strokeTiles.current = [...strokeTiles.current, ...path];
-      addToDraft(path);
-      return;
-    }
+    if (e.pointerType !== "mouse") return;
     const i = tileAt(e.clientX, e.clientY);
-    if (e.pointerType === "mouse") setHover(i);
+    setHover(i);
     if (painting.current && tool !== "inspect" && i !== null && i !== lastTile.current) {
       // 速く動かしても途切れないよう、前のマスとの間も埋める
       const path = lastTile.current !== null ? gridPath(lastTile.current, i, state.width) : [i];
@@ -342,29 +299,133 @@ export function CityMap() {
       for (const j of path) applyToolAt(j, true);
     }
   };
-  const onPointerUp = (e: React.PointerEvent) => {
-    if (e.pointerType !== "mouse" && paintTool) {
-      pointers.current.delete(e.pointerId);
-      if (pointers.current.size === 0) {
-        pan.current = null;
-        lastTile.current = null;
-        // 1マスだけの下書きで、同じマスをもう一度タップしたら確定
-        const stroke = strokeTiles.current;
-        if (stroke.length === 1 && strokeHadBefore.current.length === 1 && strokeHadBefore.current[0] === stroke[0]) confirmDraft();
-        strokeTiles.current = [];
-      }
-      return;
-    }
-    const start = touchStart.current;
-    touchStart.current = null;
-    if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) < 10) onTap(start.tile);
-    stopPainting();
-  };
   const stopPainting = () => {
     painting.current = false;
     lastTile.current = null;
     endStroke();
   };
+
+  // ---- タッチ：タップ／なぞって下書き／2本指で移動 ----
+  const touchHandlers = {
+    start(e: TouchEvent) {
+      const n = e.touches.length;
+      if (n >= 2) {
+        // 2本目の指：いまのストロークを取り消して、地図を動かす
+        if (gesture.current.kind === "draw") cancelStroke();
+        if (paintTool && !moveMode) {
+          e.preventDefault();
+          const [a, b] = [e.touches[0], e.touches[1]];
+          const sc = scrollRef.current;
+          gesture.current = { kind: "pan", x: (a.clientX + b.clientX) / 2, y: (a.clientY + b.clientY) / 2, sl: sc?.scrollLeft ?? 0, st: sc?.scrollTop ?? 0, wy: window.scrollY };
+        } else {
+          gesture.current = { kind: "none" };
+        }
+        return;
+      }
+      const t = e.touches[0];
+      const i = tileAt(t.clientX, t.clientY);
+      if (i === null) {
+        gesture.current = { kind: "none" };
+        return;
+      }
+      if (paintTool && !moveMode) {
+        e.preventDefault();
+        strokeHadBefore.current = draftTiles ?? [];
+        strokeTiles.current = [i];
+        gesture.current = { kind: "draw", last: i };
+        addToDraft([i]);
+      } else {
+        // 指を離したときにタップとして扱う（動かしたらスクロール）
+        gesture.current = { kind: "tap", x: t.clientX, y: t.clientY, tile: i };
+      }
+    },
+    move(e: TouchEvent) {
+      const g = gesture.current;
+      if (g.kind === "pan") {
+        if (e.touches.length < 2) return;
+        e.preventDefault();
+        const [a, b] = [e.touches[0], e.touches[1]];
+        const dx = (a.clientX + b.clientX) / 2 - g.x;
+        const dy = (a.clientY + b.clientY) / 2 - g.y;
+        const sc = scrollRef.current;
+        if (sc && (sc.scrollHeight > sc.clientHeight + 1 || sc.scrollWidth > sc.clientWidth + 1)) {
+          sc.scrollLeft = g.sl - dx;
+          sc.scrollTop = g.st - dy;
+        } else {
+          window.scrollTo({ top: g.wy - dy });
+        }
+      } else if (g.kind === "draw") {
+        e.preventDefault();
+        const t = e.touches[0];
+        const i = tileAt(t.clientX, t.clientY);
+        if (i === null || i === g.last) return;
+        const path = gridPath(g.last, i, state.width);
+        gesture.current = { kind: "draw", last: i };
+        strokeTiles.current = [...strokeTiles.current, ...path];
+        addToDraft(path);
+      } else if (g.kind === "tap") {
+        const t = e.touches[0];
+        if (Math.hypot(t.clientX - g.x, t.clientY - g.y) > 10) gesture.current = { kind: "none" };
+      }
+    },
+    end(e: TouchEvent) {
+      if (e.touches.length > 0) {
+        // まだ指が残っている（2本指の片方を離した）ときは、全部離すまで何もしない
+        if (gesture.current.kind !== "pan") gesture.current = { kind: "none" };
+        return;
+      }
+      const g = gesture.current;
+      gesture.current = { kind: "none" };
+      if (g.kind === "tap") {
+        const t = e.changedTouches[0];
+        if (t && Math.hypot(t.clientX - g.x, t.clientY - g.y) <= 10) {
+          e.preventDefault(); // ダブルタップでの拡大などを防ぐ
+          onTap(g.tile);
+        }
+      } else if (g.kind === "draw") {
+        // 1マスだけの下書きで、同じマスをもう一度タップしたら確定
+        const stroke = strokeTiles.current;
+        if (stroke.length === 1 && strokeHadBefore.current.length === 1 && strokeHadBefore.current[0] === stroke[0]) confirmDraft();
+      }
+      strokeTiles.current = [];
+    },
+    cancel() {
+      if (gesture.current.kind === "draw") cancelStroke();
+      gesture.current = { kind: "none" };
+      strokeTiles.current = [];
+    },
+  };
+  /** いまのストロークでなぞった分だけ、下書きから取り除く */
+  const cancelStroke = () => {
+    const stroke = strokeTiles.current;
+    const before = strokeHadBefore.current;
+    if (stroke.length > 0) setDraft((d) => (d ? { ...d, tiles: d.tiles.filter((j) => !stroke.includes(j) || before.includes(j)) } : d));
+    strokeTiles.current = [];
+  };
+  // イベントリスナーは一度だけ登録し、中身は毎回の描画で最新のものに差し替える
+  const touchRef = useRef(touchHandlers);
+  useEffect(() => {
+    touchRef.current = touchHandlers;
+  });
+  useEffect(() => {
+    const el = gridRef.current;
+    if (!el) return;
+    const start = (e: TouchEvent) => touchRef.current.start(e);
+    const move = (e: TouchEvent) => touchRef.current.move(e);
+    const end = (e: TouchEvent) => touchRef.current.end(e);
+    const cancel = () => touchRef.current.cancel();
+    // preventDefault できるよう passive: false で登録する（React の onTouchMove は passive）
+    el.addEventListener("touchstart", start, { passive: false });
+    el.addEventListener("touchmove", move, { passive: false });
+    el.addEventListener("touchend", end, { passive: false });
+    el.addEventListener("touchcancel", cancel);
+    return () => {
+      el.removeEventListener("touchstart", start);
+      el.removeEventListener("touchmove", move);
+      el.removeEventListener("touchend", end);
+      el.removeEventListener("touchcancel", cancel);
+    };
+  }, [size]);
 
   const covKind = RANGE_OVERLAYS.includes(overlay) ? (overlay as CoverageKind) : null;
 
@@ -494,18 +555,14 @@ export function CityMap() {
               background: "#9fd066",
               // 調べる・1マスの施設ではスクロールでき、道路やゾーンはなぞって連続設置できる
               // 調べる・公共施設ではスワイプで地図を動かせ、道路やゾーンはなぞって連続設置できる
-              touchAction: paintTool ? "none" : "pan-x pan-y",
+              touchAction: paintTool && !moveMode ? "none" : "pan-x pan-y",
               cursor: tool === "inspect" ? "pointer" : tool === "bulldoze" ? "not-allowed" : "crosshair",
             }}
+            ref={gridRef}
             onPointerDown={onPointerDown}
             onPointerMove={onPointerMove}
-            onPointerUp={onPointerUp}
-            onPointerCancel={(e) => {
-              touchStart.current = null;
-              pointers.current.delete(e.pointerId);
-              if (pointers.current.size === 0) pan.current = null;
-              stopPainting();
-            }}
+            onPointerUp={stopPainting}
+            onPointerCancel={stopPainting}
             onPointerLeave={() => {
               setHover(null);
               if (painting.current) stopPainting();
@@ -543,6 +600,16 @@ export function CityMap() {
           </div>
         </div>
 
+        {paintTool && (
+          <button
+            type="button"
+            onClick={() => setMoveMode((v) => !v)}
+            className={cx("absolute right-2 top-2 z-30 rounded-full px-3 py-1.5 text-xs font-black shadow-lg ring-1 lg:hidden", moveMode ? "bg-blue-600 text-white ring-blue-700" : "bg-white/95 text-slate-700 ring-slate-900/10")}
+            aria-pressed={moveMode}
+          >
+            {moveMode ? "✏️ なぞるに戻す" : "✋ 地図を動かす"}
+          </button>
+        )}
         {banner && (
           <div key={banner.id} className="animate-banner pointer-events-none absolute left-1/2 top-3 z-30 w-[min(92%,22rem)] rounded-2xl bg-white/95 px-4 py-3 text-center shadow-xl ring-1 ring-slate-900/10">
             <div className="text-sm font-black text-slate-800">{banner.title}</div>
@@ -555,7 +622,9 @@ export function CityMap() {
         )}
       </div>
       {paintTool && (
-        <p className="px-1 text-[11px] font-bold text-slate-400 lg:hidden">なぞると下書き → 下の「✓ 建設」で確定。2本指で地図・画面を動かせます</p>
+        <p className="px-1 text-[11px] font-bold text-slate-400 lg:hidden">
+          {moveMode ? "✋ 地図を動かすモード：1本指で地図・画面を動かせます。なぞるときは地図の右上の ✏️ を押してください" : "なぞると下書き → 下の「✓ 建設」で確定。地図を動かすときは2本指、または地図の右上の ✋"}
+        </p>
       )}
       {draftTiles && draftSim && draftTiles.length > 0 && (
         <div className="fixed inset-x-2 z-50 flex items-center gap-2 rounded-2xl bg-slate-900/95 px-3 py-2 text-white shadow-2xl lg:hidden" style={{ bottom: "calc(156px + env(safe-area-inset-bottom))" }}>
@@ -732,3 +801,9 @@ function railSideOf(x: number, y: number, w: number, h: number): "top" | "right"
   if (y + 1 === h - 1) return "bottom";
   return undefined;
 }
+
+type TouchGesture =
+  | { kind: "none" }
+  | { kind: "tap"; x: number; y: number; tile: number }
+  | { kind: "draw"; last: number }
+  | { kind: "pan"; x: number; y: number; sl: number; st: number; wy: number };
