@@ -7,7 +7,7 @@ import { initialEra } from "./eras";
 import { getScenario } from "./scenarios";
 import { toIndex } from "./map";
 import { createRng, randomSeed, type Rng } from "./rng";
-import { TRAITS } from "./traits";
+import { TRAIT_IDS, TRAITS, pickTendency } from "./traits";
 import type { Building, BuildingType, GameState, TendencyId, Tile, TownProfile, TraitId } from "./types";
 import { generateVoices } from "./voices";
 
@@ -15,10 +15,19 @@ export function newBuilding(type: BuildingType, level: number, turn: number, pai
   return { type, level, occupants: 0, growth: 0, builtTurn: turn, paid, abandoned: false };
 }
 
-export function generateProfile(rng: Rng, forceTrait?: TraitId): TownProfile {
-  const picked = rng.pick<TraitId>(["coastal", "industrial", "suburban", "merchant"]);
-  const trait = forceTrait ?? picked;
-  const tendency = rng.pick<TendencyId>(["families", "elderly", "eco", "balanced"]);
+export interface ProfileChoice {
+  /** プレイヤーが選んだ個性（なければランダム） */
+  trait?: TraitId;
+  /** プレイヤーが選んだ住民の傾向（なければ個性に合わせて重み付きでランダム） */
+  tendency?: TendencyId;
+}
+
+/** 町の個性を決める。選んでも選ばなくても乱数の使い方は同じにして、ほかの要素（地価・地形など）がぶれないようにする */
+export function generateProfile(rng: Rng, choice: ProfileChoice = {}): TownProfile {
+  const picked = rng.pick<TraitId>(TRAIT_IDS);
+  const trait = choice.trait ?? picked;
+  const pickedTendency = pickTendency(rng, trait);
+  const tendency = choice.tendency ?? pickedTendency;
   const t = TRAITS[trait];
   const round2 = (v: number) => Math.round(v * 100) / 100;
   return {
@@ -158,12 +167,21 @@ export function addForests(tiles: Tile[], size: number, profile: Pick<TownProfil
 export interface NewGameOptions {
   /** チャレンジ（シナリオ）の id。フリープレイなら省略 */
   scenario?: string;
+  /** 個性・住民の傾向をプレイヤーが選んだ場合 */
+  trait?: TraitId;
+  tendency?: TendencyId;
+}
+
+/** チャレンジで決まっている個性・傾向を優先して、選択をまとめる */
+function resolveChoice(scenario: string | undefined, choice: ProfileChoice): ProfileChoice {
+  const def = scenario ? getScenario(scenario) : undefined;
+  return { trait: def?.trait ?? choice.trait, tendency: def?.tendency ?? choice.tendency };
 }
 
 export function createNewGame(townName: string, seed: number = randomSeed(), options: NewGameOptions = {}): GameState {
   const rng = createRng(seed);
   const scenario = options.scenario ? getScenario(options.scenario) : undefined;
-  const profile = generateProfile(rng, scenario?.trait);
+  const profile = generateProfile(rng, resolveChoice(options.scenario, options));
   const money = Math.round(rng.range(2_600_000, 4_000_000) / 100_000) * 100_000;
   const state: GameState = {
     version: SAVE_VERSION,
@@ -216,9 +234,9 @@ export function createNewGame(townName: string, seed: number = randomSeed(), opt
 }
 
 /** スタート画面で町の個性をプレビューする */
-export function previewTown(seed: number, scenario?: string): { profile: TownProfile; money: number } {
+export function previewTown(seed: number, scenario?: string, choice: ProfileChoice = {}): { profile: TownProfile; money: number } {
   const rng = createRng(seed);
-  const profile = generateProfile(rng, scenario ? getScenario(scenario)?.trait : undefined);
+  const profile = generateProfile(rng, resolveChoice(scenario, choice));
   const money = Math.round(rng.range(2_600_000, 4_000_000) / 100_000) * 100_000;
   return { profile, money };
 }

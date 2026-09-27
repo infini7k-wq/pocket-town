@@ -11,7 +11,14 @@ import {
   transferTargets,
   type GameState,
   TRAITS,
+  TRAIT_IDS,
   TRAIT_PROJECTS,
+  TENDENCIES,
+  TENDENCY_IDS,
+  isHardCombo,
+  townStory,
+  type TendencyId,
+  type TraitId,
   BUILDINGS,
   bestStars,
   exportTransferCode,
@@ -92,8 +99,37 @@ export function StartScreen() {
   const [mode, setMode] = useState<Mode>("free");
   const [scenarioId, setScenarioId] = useState(SCENARIOS[0].id);
   const scenario = mode === "challenge" ? getScenario(scenarioId) : undefined;
-  const preview = previewTown(seed, scenario?.id);
+  // 町のタイプ：自分で選ぶか、おまかせ（ランダム）
+  const [traitChoice, setTraitChoice] = useState<TraitId | "random">("random");
+  const [tendencyChoice, setTendencyChoice] = useState<TendencyId | null>(null);
+  // おまかせで「別の町を探す」ときは、4つのタイプを一巡するまで同じタイプを出さない
+  const [seenTraits, setSeenTraits] = useState<TraitId[]>([]);
+  const choice = { trait: traitChoice === "random" ? undefined : traitChoice, tendency: tendencyChoice ?? undefined };
+  const preview = previewTown(seed, scenario?.id, choice);
   const trait = TRAITS[preview.profile.trait];
+  const tendency = TENDENCIES[preview.profile.tendency];
+  const forcedTrait = scenario?.trait;
+  const forcedTendency = scenario?.tendency;
+  const reroll = () => {
+    setTendencyChoice(null);
+    if (traitChoice !== "random" || forcedTrait) {
+      setSeed(randomSeed());
+      return;
+    }
+    const seen = seenTraits.length + 1 >= TRAIT_IDS.length ? [] : [...seenTraits, preview.profile.trait];
+    let next = randomSeed();
+    for (let k = 0; k < 40; k++) {
+      const t = previewTown(next).profile.trait;
+      if (!seen.includes(t) && t !== preview.profile.trait) break;
+      next = randomSeed();
+    }
+    setSeenTraits(seen);
+    setSeed(next);
+  };
+  const cycleTendency = () => {
+    const idx = TENDENCY_IDS.indexOf(preview.profile.tendency);
+    setTendencyChoice(TENDENCY_IDS[(idx + 1) % TENDENCY_IDS.length]);
+  };
 
   return (
     <main className="relative min-h-dvh overflow-hidden">
@@ -189,7 +225,7 @@ export function StartScreen() {
                 e.preventDefault();
                 // 選んだ枠にデータがあるときは、上書きしてよいか確認する
                 if (targetSave && !window.confirm(`枠${target}の町「${targetSave.townName}」（${formatDate(targetSave.turn)}）は上書きされます。\n（殿堂の記録は残ります）\n新しい町を始めますか？`)) return;
-                newGame(name, seed, scenario?.id, target);
+                newGame(name, seed, scenario?.id, target, choice);
               }}
             >
               {/* 保存する枠 */}
@@ -281,22 +317,64 @@ export function StartScreen() {
 
               <div className="rounded-2xl bg-gradient-to-br from-sky-50 to-emerald-50 p-4 ring-1 ring-slate-900/5">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-slate-500">この町の個性</span>
-                  <button type="button" onClick={() => setSeed(randomSeed())} className="rounded-full bg-white px-3 py-1 text-xs font-bold text-blue-600 shadow-sm ring-1 ring-slate-900/5 hover:bg-blue-50">
+                  <span className="text-xs font-bold text-slate-500">町のタイプ</span>
+                  <button type="button" onClick={reroll} className="rounded-full bg-white px-3 py-1 text-xs font-bold text-blue-600 shadow-sm ring-1 ring-slate-900/5 hover:bg-blue-50">
                     🎲 別の町を探す
                   </button>
                 </div>
-                <div className="mt-2 flex items-center gap-3">
+                <div className="mt-2 grid grid-cols-5 gap-1" role="radiogroup" aria-label="町のタイプ">
+                  {(["random", ...TRAIT_IDS] as const).map((id) => {
+                    const selected = forcedTrait ? id === forcedTrait : traitChoice === id;
+                    const disabled = !!forcedTrait && id !== forcedTrait;
+                    return (
+                      <button
+                        key={id}
+                        type="button"
+                        role="radio"
+                        aria-checked={selected}
+                        disabled={disabled}
+                        onClick={() => {
+                          setTraitChoice(id);
+                          setTendencyChoice(null);
+                        }}
+                        className={cx(
+                          "flex flex-col items-center rounded-xl px-0.5 py-1.5 text-[10px] font-black ring-1 transition disabled:opacity-35",
+                          selected ? "bg-white text-slate-800 ring-2 ring-blue-400" : "bg-white/60 text-slate-500 ring-slate-200 hover:bg-white",
+                        )}
+                      >
+                        <span className="text-xl leading-none" aria-hidden>
+                          {id === "random" ? "🎲" : TRAITS[id].emoji}
+                        </span>
+                        <span className="mt-0.5">{id === "random" ? "おまかせ" : TRAITS[id].short}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+                {forcedTrait && <p className="mt-1 text-[11px] font-bold text-rose-600">このチャレンジは「{TRAITS[forcedTrait].name}」で決まっています</p>}
+                <div className="mt-3 flex items-center gap-3">
                   <span className="text-4xl" aria-hidden>
                     {trait.emoji}
                   </span>
-                  <div>
+                  <div className="min-w-0">
                     <div className="text-lg font-black text-slate-800">{trait.name}</div>
-                    <div className="text-xs font-bold leading-snug text-slate-500">{trait.description}</div>
-                    <div className="mt-0.5 text-[11px] font-black text-amber-700">
-                      ✨ この町だけの施設：{BUILDINGS[TRAIT_PROJECTS[preview.profile.trait]].emoji[1]} {BUILDINGS[TRAIT_PROJECTS[preview.profile.trait]].name}（町になると建設できる）
-                    </div>
+                    <div className="text-sm font-black leading-snug text-emerald-800">「{townStory(preview.profile.trait, preview.profile.tendency)}」</div>
+                    <div className="mt-0.5 text-xs font-bold leading-snug text-slate-500">{trait.description}</div>
                   </div>
+                </div>
+                <div className="mt-2 flex items-center gap-2 rounded-xl bg-white/80 px-2.5 py-1.5">
+                  <span className="min-w-0 flex-1 text-xs font-bold text-slate-600">
+                    {tendency.emoji} 住民：<span className="font-black text-slate-800">{tendency.name}</span>
+                    <span className="ml-1 text-[11px] text-slate-400">（{tendency.description}）</span>
+                    {isHardCombo(preview.profile.trait, preview.profile.tendency) && <span className="ml-1 rounded-full bg-rose-100 px-1.5 py-px text-[10px] font-black text-rose-700">⚠️ むずかしめ</span>}
+                  </span>
+                  {!forcedTendency && (
+                    <button type="button" onClick={cycleTendency} className="shrink-0 rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-black text-slate-600 hover:bg-slate-200">
+                      👥 住民を変える
+                    </button>
+                  )}
+                </div>
+                <div className="mt-2 text-[11px] font-black text-amber-700">
+                  ✨ この町だけの施設：{BUILDINGS[TRAIT_PROJECTS[preview.profile.trait]].emoji[1]} {BUILDINGS[TRAIT_PROJECTS[preview.profile.trait]].name}（町になると建設できる）
                 </div>
                 <div className="mt-3 grid grid-cols-2 gap-1.5">
                   {!scenario && (
@@ -305,7 +383,9 @@ export function StartScreen() {
                       <div className="tabular text-xs font-black text-slate-700">{formatYen(preview.money)}</div>
                     </div>
                   )}
-                  {profileSummary(preview.profile).map((p) => (
+                  {profileSummary(preview.profile)
+                    .filter((p) => p.label !== "住民")
+                    .map((p) => (
                     <div key={p.label} className="rounded-lg bg-white/80 px-2 py-1">
                       <div className="text-[10px] font-bold text-slate-400">{p.label}</div>
                       <div className="text-xs font-black text-slate-700">{p.value}</div>

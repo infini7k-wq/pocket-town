@@ -7,7 +7,7 @@ import { NEWS_LIMIT } from "./config";
 import { population } from "./map";
 import { rankIndex } from "./progression";
 import type { Rng } from "./rng";
-import type { GameState, ScenarioResult, TraitId } from "./types";
+import type { GameState, ScenarioResult, TendencyId, TraitId } from "./types";
 
 export interface ScenarioDef {
   id: string;
@@ -21,6 +21,8 @@ export interface ScenarioDef {
   years: number;
   /** 町の個性を固定する場合 */
   trait?: TraitId;
+  /** 住民の傾向を固定する場合 */
+  tendency?: TendencyId;
   /** 初期の町に手を加える（draft を直接更新） */
   setup: (s: GameState, rng: Rng) => void;
   /** 達成度（0〜1。1 で達成） */
@@ -62,12 +64,13 @@ export const SCENARIOS: ScenarioDef[] = [
     story: "若者が去り、空き家ばかりになった村。お年寄りの多い「高齢化の時代」に、もう一度にぎわいを取り戻せるか。",
     goal: "5年以内に人口800人",
     years: 5,
+    tendency: "elderly",
     setup: (s) => {
       for (const t of s.tiles) {
         const b = t.building;
         if (b?.type === "residential") b.occupants = Math.round(capacityAt("residential", b.level) * 0.3);
       }
-      s.profile = { ...s.profile, tendency: "elderly", resAppeal: s.profile.resAppeal - 0.03 };
+      s.profile = { ...s.profile, resAppeal: s.profile.resAppeal - 0.03 };
       s.era = { id: "aging", since: 0, next: { id: "babyBoom", turn: 60, announced: false } };
     },
     progress: (_s, a) => clamp01(a.population / 800),

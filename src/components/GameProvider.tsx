@@ -42,6 +42,8 @@ import {
   type OutflowReason,
   type RankId,
   type ScenarioResult,
+  type TendencyId,
+  type TraitId,
   type ZoneType,
 } from "@/game";
 
@@ -107,7 +109,7 @@ interface GameContextValue {
   repayLoan: () => void;
   chooseEventOption: (choiceId: string) => void;
   /** 新しい町を始める（slot = 保存する枠 1〜3） */
-  newGame: (name: string, seed: number, scenario: string | undefined, slot: number) => void;
+  newGame: (name: string, seed: number, scenario: string | undefined, slot: number, choice?: { trait?: TraitId; tendency?: TendencyId }) => void;
   /** いま遊んでいるセーブの枠 */
   slot: number;
   /** いまの街を殿堂に記録する */
@@ -498,10 +500,10 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   );
 
   const newGame = useCallback(
-    (name: string, seed: number, scenario: string | undefined, target: number) => {
+    (name: string, seed: number, scenario: string | undefined, target: number, choice: { trait?: TraitId; tendency?: TendencyId } = {}) => {
       setSlot(target);
       setActiveSlot(target);
-      commit(createNewGame(name, seed, { scenario }));
+      commit(createNewGame(name, seed, { scenario, ...choice }));
       setUndoStack([]);
       setScenarioResult(null);
       setToolState("inspect");

@@ -3,6 +3,9 @@ import { checkPlacement } from "../actions";
 import { analyzeCity, demandLevel } from "../analysis";
 import { computeNoise } from "../environment";
 import { nextLevelChecks } from "../growth";
+import { createNewGame, previewTown } from "../state";
+import { TENDENCY_IDS, TRAIT_IDS, townStory } from "../traits";
+import type { TendencyId, TraitId } from "../types";
 import { blankState, idx, put, roadRow } from "./helpers";
 
 describe("v1.2 エンジン", () => {
@@ -67,5 +70,43 @@ describe("v1.2 エンジン", () => {
     put(s, 7, 7, "bigPark");
     const after = computeNoise(s, analyzeCity(s).fx)[home];
     expect(after).toBeCloseTo(before / 2);
+  });
+});
+
+describe("町のタイプと住民の傾向", () => {
+  it("タイプと住民を選ぶと、そのとおりに始まり、プレビューとも一致する", () => {
+    for (const seed of [1, 2, 3, 99]) {
+      const choice = { trait: "suburban" as const, tendency: "eco" as const };
+      const game = createNewGame("A", seed, choice);
+      expect(game.profile.trait).toBe("suburban");
+      expect(game.profile.tendency).toBe("eco");
+      expect(previewTown(seed, undefined, choice).profile).toEqual(game.profile);
+    }
+  });
+
+  it("おまかせでもプレビューと実際の町は一致する", () => {
+    for (const seed of [5, 6, 7]) expect(previewTown(seed).profile).toEqual(createNewGame("A", seed).profile);
+  });
+
+  it("住民の傾向はタイプに合わせて出やすさが変わる（郊外は子育て世代が多く、工業×環境は少ない）", () => {
+    const count = (trait: TraitId, tendency: TendencyId) => {
+      let n = 0;
+      for (let seed = 0; seed < 4000; seed++) if (previewTown(seed, undefined, { trait }).profile.tendency === tendency) n++;
+      return n / 4000;
+    };
+    expect(count("suburban", "families")).toBeGreaterThan(0.38);
+    expect(count("industrial", "eco")).toBeLessThan(0.18);
+    expect(count("industrial", "eco")).toBeGreaterThan(0.06);
+  });
+
+  it("「限界集落を救え」はスタート画面の表示も実際もお年寄りが多い町", () => {
+    for (const seed of [1, 2, 3]) {
+      expect(previewTown(seed, "depopulated").profile.tendency).toBe("elderly");
+      expect(createNewGame("A", seed, { scenario: "depopulated" }).profile.tendency).toBe("elderly");
+    }
+  });
+
+  it("16通りすべてに町の紹介文がある", () => {
+    for (const t of TRAIT_IDS) for (const d of TENDENCY_IDS) expect(townStory(t, d).length).toBeGreaterThan(5);
   });
 });

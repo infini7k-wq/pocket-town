@@ -5,6 +5,7 @@ import {
   ECONOMY,
   projectsFor,
   cityScore,
+  townStory,
   nextAdvice,
   demandLevel,
   DEMAND,
@@ -583,6 +584,7 @@ function CityPanel() {
             {TENDENCIES[state.profile.tendency].emoji} {TENDENCIES[state.profile.tendency].name}
           </span>
         </div>
+        <p className="mt-1.5 text-[11px] font-bold text-emerald-800">「{townStory(state.profile.trait, state.profile.tendency)}」</p>
         {pops.length > 1 && (
           <div className="mt-3">
             <div className="mb-1 flex justify-between text-[11px] font-bold text-slate-500">
