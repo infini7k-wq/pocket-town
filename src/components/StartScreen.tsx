@@ -447,9 +447,9 @@ function TransferSection({ hasData }: { hasData: boolean }) {
 
   const makeCode = async () => {
     const saves = Array.from({ length: SAVE_SLOTS }, (_, k) => parseSave(readKey(slotKey(k + 1))));
-    const save = saves[getActiveSlot() - 1] ?? saves.find(Boolean) ?? null;
+    // 新しい形式では枠ごとの saves だけを入れる（同じ町を二重に入れてコードが長くならないように）
     const hall = parseHall(readKey(HALL_KEY));
-    const c = await exportTransferCode({ save, saves, hall });
+    const c = await exportTransferCode({ save: null, saves, hall });
     setCode(c);
     try {
       await navigator.clipboard.writeText(c);

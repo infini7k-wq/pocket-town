@@ -4,7 +4,7 @@ import { BUILDINGS } from "./buildings";
 import { DISCONNECTED_FACTOR, SHOP_RADIUS } from "./config";
 import { forEachInRange } from "./map";
 import type { RoadNetwork } from "./roads";
-import type { CoverageKind, GameState } from "./types";
+import type { Building, CoverageKind, GameState } from "./types";
 
 export type CoverageMap = Record<CoverageKind, number[]>;
 
@@ -16,6 +16,13 @@ const SHOPPING_STRENGTH = [0, 0.6, 0.85, 1, 1.15];
 /** 範囲内の効果：中心で 1、範囲の端で 0.5 */
 export function falloff(dist: number, radius: number): number {
   return 1 - 0.5 * Math.min(1, dist / Math.max(1, radius));
+}
+
+/** 建物の実際の効果範囲（お店はレベルが上がるほど遠くから客が来る） */
+export function effectiveRadius(b: Pick<Building, "type" | "level">): number {
+  const def = BUILDINGS[b.type];
+  if (!def.coverage) return 0;
+  return b.type === "commercial" ? (SHOP_RADIUS[b.level] ?? def.coverage.radius) : def.coverage.radius;
 }
 
 export function computeCoverage(state: Pick<GameState, "tiles" | "width" | "height">, net: RoadNetwork): CoverageMap {
@@ -35,7 +42,7 @@ export function computeCoverage(state: Pick<GameState, "tiles" | "width" | "heig
     }
     const target = map[def.coverage.kind];
     // お店は大きいほど遠くから客が来る
-    const radius = b.type === "commercial" ? (SHOP_RADIUS[b.level] ?? def.coverage.radius) : def.coverage.radius;
+    const radius = effectiveRadius(b);
     forEachInRange(i, def.size ?? 1, radius, state.width, state.height, (j, d) => {
       const v = strength * falloff(d, radius);
       if (v > target[j]) target[j] = v;

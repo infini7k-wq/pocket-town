@@ -263,7 +263,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const apply = useCallback(
-    (fn: (s: GameState) => ActionResult, opts: { silent?: boolean; stroke?: boolean } = {}): GameState | null => {
+    (fn: (s: GameState) => ActionResult, opts: { silent?: boolean; stroke?: boolean; noUndo?: boolean } = {}): GameState | null => {
       const cur = stateRef.current;
       if (!cur) return null;
       const r = fn(cur);
@@ -271,7 +271,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         if (!opts.silent) toast(r.error, "bad");
         return null;
       }
-      if (r.state !== cur) {
+      if (r.state !== cur && !opts.noUndo) {
         // ドラッグでの連続設置は、ひとまとまりで1回の取り消しにする
         if (!opts.stroke || !strokeSnapshot.current) setUndoStack((u) => [...u.slice(-29), cur]);
         if (opts.stroke) strokeSnapshot.current = true;
@@ -336,15 +336,33 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     strokeSnapshot.current = false;
   }, []);
 
+  // 取り消しの履歴は ref でも持ち、素早く続けて押しても1つずつ戻るようにする
+  const undoRef = useRef<GameState[]>([]);
+  /** 前のゲームのダイアログ・選択状態を消す（別の枠を続けたときに残らないように）。setState だけなので毎回作ってよい */
+  const clearDialogs = () => {
+    setRankUp(null);
+    setEraShift(null);
+    setScenarioResult(null);
+    setBanner(null);
+    setSelected(null);
+    setFlash(null);
+    setUndoStack([]);
+    undoRef.current = [];
+  };
+  useEffect(() => {
+    undoRef.current = undoStack;
+  }, [undoStack]);
   const undo = useCallback(() => {
-    const prev = undoStack[undoStack.length - 1];
+    const stack = undoRef.current;
+    const prev = stack[stack.length - 1];
     if (!prev) return;
-    setUndoStack((u) => u.slice(0, -1));
+    undoRef.current = stack.slice(0, -1);
+    setUndoStack(undoRef.current);
     stateRef.current = prev;
     setState(prev);
     setSelected(null);
     toast("↩️ ひとつ前に戻しました", "info");
-  }, [undoStack, toast]);
+  }, [toast]);
 
   const runAction = useCallback((fn: (s: GameState) => ActionResult) => apply(fn) !== null, [apply]);
 
@@ -410,11 +428,11 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   const advance = useCallback(() => {
     const cur = stateRef.current;
     if (!cur) return;
-    if (cur.pendingEvent) {
+    if (cur.pendingEvent && getEventDef(cur.pendingEvent.eventId)?.choices) {
       toast("先にイベントへの対応を決めてください", "bad");
       return;
     }
-    const out = advanceMonth(cur);
+    const out = advanceMonth(withValidPendingEvent(cur));
     if (!out) return;
     setUndoStack([]);
     commit(out.state);
@@ -423,12 +441,13 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
 
   const advanceMany = useCallback(
     (months: number) => {
-      const start = stateRef.current;
-      if (!start) return;
-      if (start.pendingEvent) {
+      const raw = stateRef.current;
+      if (!raw) return;
+      if (raw.pendingEvent && getEventDef(raw.pendingEvent.eventId)?.choices) {
         toast("先にイベントへの対応を決めてください", "bad");
         return;
       }
+      const start = withValidPendingEvent(raw);
       let cur = start;
       let last: { before: GameState; state: GameState; report: MonthReport } | null = null;
       let inflow = 0;
@@ -436,6 +455,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       let net = 0;
       let done = 0;
       let popStart: number | null = null;
+      const missed: string[] = [];
       for (let k = 0; k < months; k++) {
         const out = advanceMonth(cur);
         if (!out) break;
@@ -450,12 +470,22 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         const r = out.report;
         if (cur.pendingEvent || cur.gameOver || r.rankUp || r.eraChange || r.scenarioResult || r.events.some((e) => e.tone === "bad")) break;
         // ミッションの報酬は毎月受け取る
-        cur = claimMissions(cur, analyzeCity(cur)).state;
+        const claimed = claimMissions(cur, analyzeCity(cur));
+        cur = claimed.state;
+        missed.push(...claimed.claimed.map((m) => `🎯 ミッション達成「${m.title}」${m.reward > 0 ? ` +${formatYen(m.reward)}` : ""}`));
+        for (const id of r.achievements) {
+          const goal = getGoal(id);
+          if (goal) missed.push(`🏆 目標達成「${goal.title}」${goal.reward > 0 ? ` 報酬 ${formatYen(goal.reward)}` : ""}`);
+        }
+        for (const e of r.events) if (e.tone === "good") missed.push(`${e.emoji} ${e.title}`);
       }
       if (!last) return;
       setUndoStack([]);
       commit(last.state);
       showMonthFeedback(last.before, last.state, last.report);
+      // 途中の月のうれしい知らせも、まとめて知らせる（多すぎるときは件数だけ）
+      if (missed.length > 3) toast(`✨ ほかにも${missed.length}件のうれしい知らせがありました（ニュースで見られます）`, "good");
+      else for (const text of missed) toast(text, "good");
       if (done > 1) {
         const pop = last.report.populationAfter - (popStart ?? last.report.populationBefore);
         const bannerId = nextId();
@@ -470,7 +500,8 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     [commit, showMonthFeedback, toast],
   );
 
-  const changeTax = useCallback((zone: ZoneType, rate: number) => void apply((s) => setTax(s, zone, rate)), [apply]);
+  // 税率はスライダーで細かく動くので、取り消しの履歴には積まない
+  const changeTax = useCallback((zone: ZoneType, rate: number) => void apply((s) => setTax(s, zone, rate), { noUndo: true }), [apply]);
 
   const takeLoan = useCallback(() => {
     const next = apply((s) => borrow(s));
@@ -504,8 +535,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       setSlot(target);
       setActiveSlot(target);
       commit(createNewGame(name, seed, { scenario, ...choice }));
-      setUndoStack([]);
-      setScenarioResult(null);
+      clearDialogs();
       setToolState("inspect");
       setSelected(null);
       setOverlay("none");
@@ -520,10 +550,9 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     if (!saved) return false;
     setSlot(target);
     setActiveSlot(target);
-    commit(saved);
-    setUndoStack([]);
+    commit(withValidPendingEvent(saved));
+    clearDialogs();
     setToolState("inspect");
-    setSelected(null);
     return true;
   }, [commit]);
 
@@ -537,8 +566,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   const quitToTitle = useCallback((clear = false) => {
     if (clear) clearSave(slot);
     commit(null);
-    setRankUp(null);
-    setBanner(null);
+    clearDialogs();
   }, [commit, slot]);
 
   const value = useMemo<GameContextValue>(
@@ -591,6 +619,12 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   );
 
   return <GameContext.Provider value={value}>{children}</GameContext.Provider>;
+}
+
+/** 選択肢を表示できないイベント（古いセーブ・不明な id）が残っていたら取り除く。残ると翌月へ進めなくなる */
+function withValidPendingEvent(s: GameState): GameState {
+  if (!s.pendingEvent || getEventDef(s.pendingEvent.eventId)?.choices) return s;
+  return { ...s, pendingEvent: null };
 }
 
 /** スマホ（1列表示）のときだけ、要素まで画面をスクロールする */

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { checkPlacement } from "../actions";
 import { analyzeCity, demandLevel } from "../analysis";
+import { effectiveRadius } from "../coverage";
 import { computeNoise } from "../environment";
 import { nextLevelChecks } from "../growth";
 import { createNewGame, previewTown } from "../state";
@@ -108,5 +109,32 @@ describe("町のタイプと住民の傾向", () => {
 
   it("16通りすべてに町の紹介文がある", () => {
     for (const t of TRAIT_IDS) for (const d of TENDENCY_IDS) expect(townStory(t, d).length).toBeGreaterThan(5);
+  });
+});
+
+describe("点検で見つかった不具合の再発防止", () => {
+  it("転入がほとんどない町でも、住宅の需要メーターが急に振り切れない", () => {
+    const s = blankState();
+    roadRow(s, 8, 3, 12);
+    s.taxes.residential = 20; // 住みにくくして転入を止める
+    for (let x = 3; x <= 6; x++) put(s, x, 9, "residential", 1, 14);
+    const full = analyzeCity(s).demand.residential;
+    put(s, 7, 9, "residential", 1, 13); // 空きが1人分だけ
+    const oneRoom = analyzeCity(s).demand.residential;
+    expect(Math.abs(full - oneRoom)).toBeLessThan(30);
+    expect(Number.isFinite(oneRoom)).toBe(true);
+  });
+
+  it("お店の範囲はレベルで広がり、表示と計算で同じ値を使う", () => {
+    expect(effectiveRadius({ type: "commercial", level: 1 })).toBe(3);
+    expect(effectiveRadius({ type: "commercial", level: 4 })).toBe(5);
+    expect(effectiveRadius({ type: "park", level: 1 })).toBe(2);
+  });
+
+  it("働き手がいない町では、お店・工場の需要は出ない", () => {
+    const s = blankState();
+    const d = analyzeCity(s).demand;
+    expect(d.industrial).toBeLessThanOrEqual(0);
+    expect(d.commercial).toBeLessThanOrEqual(0);
   });
 });

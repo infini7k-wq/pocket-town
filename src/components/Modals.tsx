@@ -17,7 +17,8 @@ export function EventModal() {
   const view = describePendingEvent(state, analysis);
   // 地図を見てから決められるよう、ダイアログを一時的にたためる
   const [peek, setPeek] = useState(false);
-  if (!view || state.gameOver || rankUp || eraShift || scenarioResult) return null;
+  // ほかのダイアログが実際に表示されているときだけ後回しにする（表示されないダイアログの状態で隠れたままにならないように）
+  if (!view || state.gameOver || rankUp || eraShift || (scenarioResult && state.scenario)) return null;
   if (peek) {
     return (
       <button

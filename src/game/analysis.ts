@@ -63,14 +63,16 @@ export function computeDemand(state: GameState, emp: Employment, happiness: numb
   const mood = clamp((happiness - 35) / 45, 0, 1.2);
   const inflow = Math.max(0, jobRoom * POPULATION.jobInflowShare + (pop * POPULATION.baselineInflow + 8) * mood);
   const vacant = Math.max(0, emp.housingCapacity + pendingRes - pop);
-  const monthsOfVacancy = vacant / Math.max(1, inflow * DEMAND.vacancyMonths);
+  // 空き部屋が「転入の何か月分」あるか。転入がほとんどない町で急に振り切れないよう、分母に下限を設ける
+  const need = inflow * DEMAND.vacancyMonths;
+  const vacancyTerm = inflow < 1 ? -60 * Math.min(1, vacant / 20) : (60 * (need - vacant)) / Math.max(need, 20);
   const residential =
-    60 * (1 - monthsOfVacancy) +
+    vacancyTerm +
     (state.profile.resAppeal + fx.resAppeal) * 60 -
     Math.max(0, u - 0.08) * 150 -
     (state.taxes.residential - HAPPINESS.taxNeutral) * 3;
   // 働き手が足りない分は、お店や工場を建てても埋まらないので目標から割り引く
-  const room = clamp(((1 + DEMAND.jobHeadroom) * workers - emp.serviceJobs) / Math.max(1, emp.comSupport + emp.indSupport), 0.4, 1);
+  const room = workers <= 0 ? 0 : clamp(((1 + DEMAND.jobHeadroom) * workers - emp.serviceJobs) / Math.max(1, emp.comSupport + emp.indSupport), 0.4, 1);
   const targetCom = room * emp.comSupport;
   const targetInd = room * emp.indSupport;
   const commercial = ((targetCom - emp.comJobs - pendingCom) / Math.max(targetCom, 30)) * 120 + Math.max(0, u - 0.05) * 100;

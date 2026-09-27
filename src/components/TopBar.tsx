@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { formatDate, formatNumber, formatYen, getEra, getRank, monthsToNextEra, nextRank, rankProgress, seasonEmoji } from "@/game";
+import { formatDate, formatNumber, formatYen, getEra, getEventDef, getRank, monthsToNextEra, nextRank, rankProgress, seasonEmoji } from "@/game";
 import { useCity, useGame } from "./GameProvider";
 import { ProgressBar, cx } from "./ui";
 
@@ -157,7 +157,8 @@ export function TopBar() {
 
 export function NextMonthButton({ onClick, compact }: { onClick: () => void; compact?: boolean }) {
   const { state } = useCity();
-  const blocked = !!state.pendingEvent || !!state.gameOver;
+  // 選択肢を出せないイベント（古いセーブなど）が残っていても、翌月へは進める
+  const blocked = (!!state.pendingEvent && !!getEventDef(state.pendingEvent.eventId)?.choices) || !!state.gameOver;
   return (
     <button
       type="button"

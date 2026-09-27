@@ -966,7 +966,8 @@ export function rollEvent(draft: GameState, a: CityAnalysis, rng: Rng, force?: s
     const message = def.message(ectx);
     draft.eventLog = { ...log, [def.id]: draft.turn };
     if (def.choices) {
-      draft.pendingEvent = { eventId: def.id, turn: draft.turn, tile, targetType: tile !== undefined ? draft.tiles[tile]?.building?.type : undefined };
+      const targetBuilding = tile !== undefined ? draft.tiles[tile]?.building : undefined;
+      draft.pendingEvent = { eventId: def.id, turn: draft.turn, tile, targetType: targetBuilding?.type, targetBuilt: targetBuilding?.builtTurn };
       const item: NewsItem = { turn: draft.turn, emoji: def.emoji, title: def.title, body: message, tone: def.tone, tile };
       return item;
     }
@@ -1014,7 +1015,7 @@ export function resolveEvent(state: GameState, a: CityAnalysis, choiceId: string
   const draft = structuredClone(state);
   // 対象の建物がなくなっていたら（撤去など）、効果のない選択として扱う
   const target = p.tile !== undefined ? draft.tiles[p.tile]?.building : undefined;
-  if (p.tile !== undefined && (!target || (p.targetType && target.type !== p.targetType))) {
+  if (p.tile !== undefined && (!target || (p.targetType && target.type !== p.targetType) || (p.targetBuilt !== undefined && target.builtTurn !== p.targetBuilt))) {
     draft.pendingEvent = null;
     return { ok: true, state: draft, message: "対象の建物がなくなったため、話は立ち消えになりました" };
   }

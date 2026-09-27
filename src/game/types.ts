@@ -125,6 +125,8 @@ export interface PendingEvent {
   tile?: number;
   /** 対象マスの建物の種類（撤去・建て替えで別の建物になったら無効にする） */
   targetType?: BuildingType;
+  /** 対象マスの建物が建った月（撤去して同じ種類を建て直した場合も無効にする） */
+  targetBuilt?: number;
 }
 
 export type Tone = "good" | "bad" | "neutral";

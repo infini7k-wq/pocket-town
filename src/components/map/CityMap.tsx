@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   BUILDINGS,
   buildingEmoji,
   checkDemolish,
   checkPlacement,
   checkReclaim,
+  effectiveRadius,
   demolish,
   footprint,
   formatYen,
@@ -92,19 +93,22 @@ export function CityMap() {
   const pending = pendingTap && pendingTap.tool === tool ? pendingTap.tile : null;
   const hover = mouseHover ?? pending;
   const [draft, setDraft] = useState<{ tool: string; tiles: number[] } | null>(null);
+  const [moveModeState, setMoveModeState] = useState(false);
   // ツールを変えたら下書きは捨てる
   const [draftTool, setDraftTool] = useState(tool);
   if (draftTool !== tool) {
     setDraftTool(tool);
     if (draft) setDraft(null);
+    if (moveModeState) setMoveModeState(false);
   }
   // スマホ（タッチ）の操作状態。指の本数は毎回イベントの e.touches から読むので、状態が残りっぱなしにならない
   const gridRef = useRef<HTMLDivElement>(null);
   const gesture = useRef<TouchGesture>({ kind: "none" });
   const strokeTiles = useRef<number[]>([]);
   const strokeHadBefore = useRef<number[]>([]);
-  // ✋ 地図を動かすモード（なぞる道具のときに、1本指で地図・画面を動かせる）
-  const [moveMode, setMoveMode] = useState(false);
+  // ✋ 地図を動かすモード（なぞる道具のときに、1本指で地図・画面を動かせる）。道具を変えたら戻す
+  const moveMode = moveModeState;
+  const setMoveMode = setMoveModeState;
 
   useEffect(() => {
     const el = wrapRef.current;
@@ -192,7 +196,7 @@ export function CityMap() {
       const cov = b ? BUILDINGS[b.type].coverage : undefined;
       if (b && cov) {
         center = selected;
-        radius = cov.radius;
+        radius = effectiveRadius(b);
         bigSize = BUILDINGS[b.type].size ?? 1;
       }
     }
@@ -253,6 +257,7 @@ export function CityMap() {
   const onTap = (i: number) => {
     if (tool === "inspect") {
       applyToolAt(i, false);
+      endStroke();
       return;
     }
     // なぞる道具（✋ 地図を動かすモード中のタップ）は下書きに加える
@@ -264,6 +269,7 @@ export function CityMap() {
     if (pending === i) {
       setPendingTap(null);
       applyToolAt(i, false);
+      endStroke();
     } else {
       setPendingTap({ tool, tile: i });
     }
@@ -306,23 +312,33 @@ export function CityMap() {
   };
 
   // ---- タッチ：タップ／なぞって下書き／2本指で移動 ----
+  // 指の本数は「地図の上で触れている指」（targetTouches）で数える。下のバーに置いた親指などは数えない
+  const startPan = (touches: TouchList) => {
+    const [a, b] = [touches[0], touches[1]];
+    const sc = scrollRef.current;
+    gesture.current = { kind: "pan", x: (a.clientX + b.clientX) / 2, y: (a.clientY + b.clientY) / 2, sl: sc?.scrollLeft ?? 0, st: sc?.scrollTop ?? 0, wy: window.scrollY };
+  };
+  const findTouch = (list: TouchList, id: number): Touch | undefined => {
+    for (let k = 0; k < list.length; k++) if (list[k].identifier === id) return list[k];
+    return undefined;
+  };
   const touchHandlers = {
     start(e: TouchEvent) {
-      const n = e.touches.length;
+      const touches = e.targetTouches;
+      const n = touches.length;
       if (n >= 2) {
-        // 2本目の指：いまのストロークを取り消して、地図を動かす
+        // 2本目の指：いまのストロークを取り消して、地図を動かす（3本目が来たら基準を取り直す）
         if (gesture.current.kind === "draw") cancelStroke();
         if (paintTool && !moveMode) {
           e.preventDefault();
-          const [a, b] = [e.touches[0], e.touches[1]];
-          const sc = scrollRef.current;
-          gesture.current = { kind: "pan", x: (a.clientX + b.clientX) / 2, y: (a.clientY + b.clientY) / 2, sl: sc?.scrollLeft ?? 0, st: sc?.scrollTop ?? 0, wy: window.scrollY };
+          startPan(touches);
         } else {
           gesture.current = { kind: "none" };
         }
         return;
       }
-      const t = e.touches[0];
+      const t = e.changedTouches[0] ?? touches[0];
+      if (!t) return;
       const i = tileAt(t.clientX, t.clientY);
       if (i === null) {
         gesture.current = { kind: "none" };
@@ -332,53 +348,64 @@ export function CityMap() {
         e.preventDefault();
         strokeHadBefore.current = draftTiles ?? [];
         strokeTiles.current = [i];
-        gesture.current = { kind: "draw", last: i };
+        gesture.current = { kind: "draw", last: i, id: t.identifier };
         addToDraft([i]);
       } else {
-        // 指を離したときにタップとして扱う（動かしたらスクロール）
-        gesture.current = { kind: "tap", x: t.clientX, y: t.clientY, tile: i };
+        // 指を離したときにタップとして扱う（動かしたら・画面が動いていたらスクロール）
+        gesture.current = { kind: "tap", x: t.clientX, y: t.clientY, tile: i, wy: window.scrollY, sy: scrollRef.current?.scrollTop ?? 0 };
       }
     },
     move(e: TouchEvent) {
       const g = gesture.current;
       if (g.kind === "pan") {
-        if (e.touches.length < 2) return;
+        const touches = e.targetTouches;
+        if (touches.length < 2) return;
         e.preventDefault();
-        const [a, b] = [e.touches[0], e.touches[1]];
+        const [a, b] = [touches[0], touches[1]];
         const dx = (a.clientX + b.clientX) / 2 - g.x;
         const dy = (a.clientY + b.clientY) / 2 - g.y;
         const sc = scrollRef.current;
+        let restY = dy;
         if (sc && (sc.scrollHeight > sc.clientHeight + 1 || sc.scrollWidth > sc.clientWidth + 1)) {
+          // 拡大中は地図の中を動かし、端まで来たら残りの分だけ画面全体を動かす
           sc.scrollLeft = g.sl - dx;
-          sc.scrollTop = g.st - dy;
-        } else {
-          window.scrollTo({ top: g.wy - dy });
+          const wantTop = g.st - dy;
+          const maxTop = sc.scrollHeight - sc.clientHeight;
+          sc.scrollTop = Math.max(0, Math.min(maxTop, wantTop));
+          // 地図の中で使い切れなかった指の移動量（dy と同じ向き）
+          restY = wantTop < 0 ? -wantTop : wantTop > maxTop ? maxTop - wantTop : 0;
         }
+        if (restY !== 0) window.scrollTo({ top: g.wy - restY });
       } else if (g.kind === "draw") {
         e.preventDefault();
-        const t = e.touches[0];
+        const t = findTouch(e.touches, g.id);
+        if (!t) return;
         const i = tileAt(t.clientX, t.clientY);
         if (i === null || i === g.last) return;
         const path = gridPath(g.last, i, state.width);
-        gesture.current = { kind: "draw", last: i };
+        gesture.current = { ...g, last: i };
         strokeTiles.current = [...strokeTiles.current, ...path];
         addToDraft(path);
       } else if (g.kind === "tap") {
         const t = e.touches[0];
-        if (Math.hypot(t.clientX - g.x, t.clientY - g.y) > 10) gesture.current = { kind: "none" };
+        if (t && Math.hypot(t.clientX - g.x, t.clientY - g.y) > 10) gesture.current = { kind: "none" };
       }
     },
     end(e: TouchEvent) {
-      if (e.touches.length > 0) {
-        // まだ指が残っている（2本指の片方を離した）ときは、全部離すまで何もしない
-        if (gesture.current.kind !== "pan") gesture.current = { kind: "none" };
+      const remaining = e.targetTouches.length;
+      if (remaining > 0) {
+        // 2本指の片方を離した：残りが2本以上なら基準を取り直し、1本なら全部離すまで何もしない
+        if (gesture.current.kind === "pan" && remaining >= 2) startPan(e.targetTouches);
+        else if (gesture.current.kind !== "pan") gesture.current = { kind: "none" };
         return;
       }
       const g = gesture.current;
       gesture.current = { kind: "none" };
       if (g.kind === "tap") {
         const t = e.changedTouches[0];
-        if (t && Math.hypot(t.clientX - g.x, t.clientY - g.y) <= 10) {
+        // 慣性スクロールを止めただけのタップは無視する
+        const scrolled = Math.abs(window.scrollY - g.wy) > 2 || Math.abs((scrollRef.current?.scrollTop ?? 0) - g.sy) > 2;
+        if (t && !scrolled && Math.hypot(t.clientX - g.x, t.clientY - g.y) <= 10) {
           e.preventDefault(); // ダブルタップでの拡大などを防ぐ
           onTap(g.tile);
         }
@@ -404,11 +431,12 @@ export function CityMap() {
   };
   // イベントリスナーは一度だけ登録し、中身は毎回の描画で最新のものに差し替える
   const touchRef = useRef(touchHandlers);
-  useEffect(() => {
+  useLayoutEffect(() => {
     touchRef.current = touchHandlers;
   });
   useEffect(() => {
-    const el = gridRef.current;
+    // 地図の枠の余白に触れた2本目の指も拾えるよう、スクロールする枠で受ける
+    const el = scrollRef.current;
     if (!el) return;
     const start = (e: TouchEvent) => touchRef.current.start(e);
     const move = (e: TouchEvent) => touchRef.current.move(e);
@@ -425,7 +453,7 @@ export function CityMap() {
       el.removeEventListener("touchend", end);
       el.removeEventListener("touchcancel", cancel);
     };
-  }, [size]);
+  }, []);
 
   const covKind = RANGE_OVERLAYS.includes(overlay) ? (overlay as CoverageKind) : null;
 
@@ -604,7 +632,7 @@ export function CityMap() {
           <button
             type="button"
             onClick={() => setMoveMode((v) => !v)}
-            className={cx("absolute right-2 top-2 z-30 rounded-full px-3 py-1.5 text-xs font-black shadow-lg ring-1 lg:hidden", moveMode ? "bg-blue-600 text-white ring-blue-700" : "bg-white/95 text-slate-700 ring-slate-900/10")}
+            className={cx("absolute right-2 top-2 z-30 hidden rounded-full px-3 py-1.5 text-xs font-black shadow-lg ring-1 pointer-coarse:block", moveMode ? "bg-blue-600 text-white ring-blue-700" : "bg-white/95 text-slate-700 ring-slate-900/10")}
             aria-pressed={moveMode}
           >
             {moveMode ? "✏️ なぞるに戻す" : "✋ 地図を動かす"}
@@ -622,16 +650,17 @@ export function CityMap() {
         )}
       </div>
       {paintTool && (
-        <p className="px-1 text-[11px] font-bold text-slate-400 lg:hidden">
+        <p className="hidden px-1 text-[11px] font-bold text-slate-400 pointer-coarse:block">
           {moveMode ? "✋ 地図を動かすモード：1本指で地図・画面を動かせます。なぞるときは地図の右上の ✏️ を押してください" : "なぞると下書き → 下の「✓ 建設」で確定。地図を動かすときは2本指、または地図の右上の ✋"}
         </p>
       )}
       {draftTiles && draftSim && draftTiles.length > 0 && (
-        <div className="fixed inset-x-2 z-50 flex items-center gap-2 rounded-2xl bg-slate-900/95 px-3 py-2 text-white shadow-2xl lg:hidden" style={{ bottom: "calc(156px + env(safe-area-inset-bottom))" }}>
+        <div className="fixed inset-x-2 bottom-[calc(156px+env(safe-area-inset-bottom))] z-50 flex items-center gap-2 rounded-2xl bg-slate-900/95 px-3 py-2 text-white shadow-2xl lg:inset-x-auto lg:bottom-6 lg:left-1/2 lg:w-[30rem] lg:-translate-x-1/2">
           <div className="min-w-0 flex-1">
             <div className="truncate text-xs font-black">
               {draftSim.label} {draftSim.ok.size}マス
               {draftSim.bad.size > 0 && <span className="ml-1 text-rose-300">（{draftSim.bad.size}マスは不可）</span>}
+              {draftSim.skipped > 0 && <span className="ml-1 text-slate-400">（{draftSim.skipped}マスは{tool === "bulldoze" ? "撤去できるものがないので" : tool === "reclaim" ? "水辺ではないので" : "すでに建物があるので"}飛ばします）</span>}
             </div>
             <div className="tabular text-[11px] font-bold text-slate-300">
               {draftSim.cost >= 0 ? `費用 ${formatYen(draftSim.cost)}` : `返金 +${formatYen(-draftSim.cost)}`}
@@ -761,6 +790,7 @@ function MapLegend({ overlay, hasRange }: { overlay: Overlay; hasRange: boolean 
 function simulateStroke(state: GameState, tool: Tool, tiles: number[]) {
   const ok = new Set<number>();
   const bad = new Set<number>();
+  let skipped = 0;
   let cur = state;
   let reason: string | undefined;
   tiles.forEach((i, k) => {
@@ -770,14 +800,23 @@ function simulateStroke(state: GameState, tool: Tool, tiles: number[]) {
     let r;
     if (tool === "bulldoze") {
       const b = t.building;
-      if (!b || (painting && BUILDINGS[b.type].category !== "zone" && !isRoad(b.type))) return;
+      if (!b || (painting && BUILDINGS[b.type].category !== "zone" && !isRoad(b.type))) {
+        skipped++;
+        return;
+      }
       r = demolish(cur, i);
     } else if (tool === "reclaim") {
-      if (t.terrain !== "water" || t.building) return;
+      if (t.terrain !== "water" || t.building) {
+        skipped++;
+        return;
+      }
       r = reclaim(cur, i);
     } else if (tool !== "inspect") {
       const existing = t.building?.type;
-      if (existing && !(tool === "avenue" && existing === "road")) return;
+      if (existing && !(tool === "avenue" && existing === "road")) {
+        skipped++;
+        return;
+      }
       r = placeBuilding(cur, tool, i);
     } else return;
     if (r.ok) {
@@ -790,7 +829,7 @@ function simulateStroke(state: GameState, tool: Tool, tiles: number[]) {
   });
   const label = tool === "bulldoze" ? "🚜 撤去" : tool === "reclaim" ? "🏝️ 埋め立て" : tool === "inspect" ? "" : `${BUILDINGS[tool].emoji[1]} ${BUILDINGS[tool].name}`;
   const emoji = tool === "bulldoze" ? "🚜" : tool === "reclaim" ? "🟩" : tool === "inspect" ? "" : buildingEmoji(tool, 1);
-  return { ok, bad, cost: state.money - cur.money, reason, label, emoji };
+  return { ok, bad, skipped, cost: state.money - cur.money, reason, label, emoji };
 }
 
 /** 新幹線駅（2×2、(x,y) が左上）が面している地図の端 */
@@ -804,6 +843,6 @@ function railSideOf(x: number, y: number, w: number, h: number): "top" | "right"
 
 type TouchGesture =
   | { kind: "none" }
-  | { kind: "tap"; x: number; y: number; tile: number }
-  | { kind: "draw"; last: number }
+  | { kind: "tap"; x: number; y: number; tile: number; wy: number; sy: number }
+  | { kind: "draw"; last: number; id: number }
   | { kind: "pan"; x: number; y: number; sl: number; st: number; wy: number };
