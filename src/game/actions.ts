@@ -2,7 +2,7 @@
 
 import { BUILDINGS, isRoad, isZone } from "./buildings";
 import { ECONOMY } from "./config";
-import { anchorOf, countBuildings, footprint, isUnlockedTile, toXY } from "./map";
+import { anchorOf, countBuildings, footprint, isUnlockedTile, neighbors4, toXY } from "./map";
 import { getRank, isBuildingUnlocked, rankIndex } from "./progression";
 import { newBuilding } from "./state";
 import type { ActionResult, BuildingType, GameState, ZoneType } from "./types";
@@ -30,6 +30,12 @@ export function buildCost(state: GameState, type: BuildingType, i: number): numb
   return cost;
 }
 
+/** 地図の外周（となり町との境）のマスか */
+export function isOnEdge(state: Pick<GameState, "width" | "height">, i: number): boolean {
+  const { x, y } = toXY(i, state.width);
+  return x === 0 || y === 0 || x === state.width - 1 || y === state.height - 1;
+}
+
 export function checkPlacement(state: GameState, type: BuildingType, i: number): PlacementCheck {
   const tile = state.tiles[i];
   const def = BUILDINGS[type];
@@ -41,6 +47,7 @@ export function checkPlacement(state: GameState, type: BuildingType, i: number):
     const rank = getRank(def.unlockRank);
     return { ok: false, cost, reason: `${def.name}は「${rank.name}」ランクで解禁されます` };
   }
+  if (def.trait && def.trait !== state.profile.trait) return { ok: false, cost, reason: `${def.name}は別の個性の町の専用施設です` };
   if (def.size === 2) {
     // 大型施設：左上のマスを基準に2×2の空き地が必要
     if (def.category === "project" && countBuildings(state, type) > 0) return { ok: false, cost, reason: `${def.name}は1つの街に1つまでです` };
@@ -50,6 +57,13 @@ export function checkPlacement(state: GameState, type: BuildingType, i: number):
       if (!isUnlockedTile(state, j)) return { ok: false, cost, reason: "まだ開発できないエリアにかかっています" };
       if (state.tiles[j].terrain === "water") return { ok: false, cost, reason: "水の上には建てられません" };
       if (state.tiles[j].building) return { ok: false, cost, reason: "2×2マスの空き地が必要です（建物を撤去してください）" };
+    }
+    const cells = cellsFor(state, type, i);
+    if (def.nearWater && !cells.some((j) => neighbors4(j, state.width, state.height).some((k) => state.tiles[k].terrain === "water"))) {
+      return { ok: false, cost, reason: `${def.name}は海や川に面した場所に建ててください` };
+    }
+    if (def.mapEdge && !cells.some((j) => isOnEdge(state, j))) {
+      return { ok: false, cost, reason: `${def.name}は線路がとなり町へ続くよう、地図の端に面した場所に建ててください` };
     }
   } else {
     if (!isUnlockedTile(state, i)) return { ok: false, cost, reason: "まだ開発できないエリアです（ランクアップで拡張）" };

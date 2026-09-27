@@ -34,6 +34,8 @@ export interface TileViewProps {
   bigSize?: 2;
   /** 工事の残り月数 */
   buildLeft?: number;
+  /** 新幹線駅：線路が出ていく地図の端の向き */
+  railSide?: "top" | "right" | "bottom" | "left";
 }
 
 const ZONE_PLATE: Record<string, string[]> = {
@@ -128,11 +130,25 @@ function Sprite({ type, level, abandoned, size }: { type: BuildingType; level: n
 }
 
 /** 2×2 の大型施設（本体のマスから4マス分にはみ出して描く） */
-function BigSprite({ type, level, buildLeft, size }: { type: BuildingType; level: number; buildLeft?: number; size: number }) {
+/** 線路（地図の端から駅の中心まで） */
+function Rail({ side }: { side: "top" | "right" | "bottom" | "left" }) {
+  const horizontal = side === "left" || side === "right";
+  const sleepers = `repeating-linear-gradient(${horizontal ? "90deg" : "0deg"}, #8d6e63 0 3px, transparent 3px 7px)`;
+  const rails = horizontal
+    ? "linear-gradient(0deg, transparent 22%, #455a64 22% 32%, transparent 32% 68%, #455a64 68% 78%, transparent 78%)"
+    : "linear-gradient(90deg, transparent 22%, #455a64 22% 32%, transparent 32% 68%, #455a64 68% 78%, transparent 78%)";
+  const pos: React.CSSProperties = horizontal
+    ? { top: "40%", height: "20%", width: "50%", [side]: 0 }
+    : { left: "40%", width: "20%", height: "50%", [side]: 0 };
+  return <div className="absolute" style={{ ...pos, backgroundImage: `${rails}, ${sleepers}`, backgroundColor: "#d7ccc8" }} aria-hidden />;
+}
+
+function BigSprite({ type, level, buildLeft, size, railSide }: { type: BuildingType; level: number; buildLeft?: number; size: number; railSide?: TileViewProps["railSide"] }) {
   const def = BUILDINGS[type];
   const building = level === 0;
   return (
     <div className="pointer-events-none absolute left-0 top-0 z-[5]" style={{ width: size * 2, height: size * 2 }}>
+      {railSide && <Rail side={railSide} />}
       <div
         className={cx("absolute inset-[4%] rounded-[18%]", building && "border-2 border-dashed border-amber-500/80")}
         style={{ background: building ? "#fef3c7" : "#ffffff", boxShadow: `0 4px 0 ${def.color}cc`, outline: building ? undefined : `3px solid ${def.color}`, outlineOffset: -3 }}
@@ -166,7 +182,7 @@ function TileViewImpl(p: TileViewProps) {
         </span>
       )}
       {road && <Road mask={p.roadMask} avenue={p.type === "avenue"} traffic={p.traffic} size={s} />}
-      {p.type && p.bigSize === 2 && <BigSprite type={p.type} level={p.level} buildLeft={p.buildLeft} size={s} />}
+      {p.type && p.bigSize === 2 && <BigSprite type={p.type} level={p.level} buildLeft={p.buildLeft} size={s} railSide={p.railSide} />}
       {p.type && !road && !p.bigSize && p.type !== "annex" && <Sprite type={p.type} level={p.level} abandoned={p.abandoned} size={s} />}
       {p.soon && (
         <span className="animate-bounce-soft pointer-events-none absolute left-[2%] top-[-4%] leading-none" style={{ fontSize: s * 0.32 }} title="もうすぐ育ちます" aria-hidden>

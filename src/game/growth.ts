@@ -2,7 +2,8 @@
 
 import type { CityAnalysis } from "./analysis";
 import { capacityAt, isZone } from "./buildings";
-import { GROWTH, MAX_LEVEL } from "./config";
+import { GROWTH, MAX_LEVEL, SHOP_CATCHMENT } from "./config";
+import { forEachInRadius } from "./map";
 import { effectiveCapacity } from "./population";
 import { getRank } from "./progression";
 import type { Rng } from "./rng";
@@ -16,6 +17,16 @@ export interface GrowthCheck {
 
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 const pct = (v: number) => `${Math.round(v * 100)}%`;
+
+/** マスの周り（半径 r）に住んでいる人数 */
+export function nearbyResidents(state: GameState, i: number, r: number): number {
+  let n = 0;
+  forEachInRadius(i, r, state.width, state.height, (j) => {
+    const t = state.tiles[j].building;
+    if (t?.type === "residential") n += t.occupants;
+  });
+  return n;
+}
 
 /** 次のレベルに上がるための条件（最大レベルなら null） */
 export function nextLevelChecks(state: GameState, i: number, a: CityAnalysis): GrowthCheck[] | null {
@@ -40,7 +51,7 @@ export function nextLevelChecks(state: GameState, i: number, a: CityAnalysis): G
     } else if (b.level === 3) {
       // タワーマンション：公共交通で通勤でき、住みやすい場所
       checks.push({ label: `満足度 70以上（いま ${Math.round(a.happiness[i])}）`, ok: a.happiness[i] >= 70 });
-      checks.push({ label: "バス停・駅の範囲内", ok: a.coverage.transit[i] > 0 });
+      checks.push({ label: "バス停・バスターミナルの範囲内", ok: a.coverage.transit[i] > 0 });
       checks.push({ label: `環境 50以上（いま ${Math.round(a.env[i])}）`, ok: a.env[i] >= 50 });
       checks.push({ label: `住んでいる割合 90%以上（いま ${pct(occ)}）`, ok: occ >= 0.9 });
     } else {
@@ -56,8 +67,16 @@ export function nextLevelChecks(state: GameState, i: number, a: CityAnalysis): G
     const needFill = b.level === 1 ? 0.85 : 0.9;
     checks.push({ label: `${what}が十分：${pct(needEff)}以上（いま ${pct(eff)}）`, ok: eff >= needEff });
     checks.push({ label: `働き手が足りている：${pct(needFill)}以上（いま ${pct(emp.jobFillRate)}）`, ok: emp.jobFillRate >= needFill });
+    if (b.type === "commercial" && SHOP_CATCHMENT.residents[upper] > 0) {
+      // 大きな店は、周りに住む人が多い場所にしか育たない（郊外はコンビニのまま）
+      // 広場の近くは人が集まるので、必要な人数が半分で済む
+      const plaza = a.coverage.plaza[i] > 0;
+      const near = nearbyResidents(state, i, SHOP_CATCHMENT.radius);
+      const need = Math.round(SHOP_CATCHMENT.residents[upper] * (plaza ? SHOP_CATCHMENT.plazaFactor : 1));
+      checks.push({ label: `周り${SHOP_CATCHMENT.radius}マスに住む人 ${need.toLocaleString("ja-JP")}人以上${plaza ? "（広場の近くで半分に）" : ""}（いま ${near.toLocaleString("ja-JP")}人）`, ok: near >= need });
+    }
     if (b.level >= 2) checks.push({ label: "前の道路が渋滞していない", ok: trafficOk });
-    if (b.level === 3 && b.type === "commercial") checks.push({ label: "バス停・駅の範囲内（通勤客が来られる）", ok: a.coverage.transit[i] > 0 });
+    if (b.level === 3 && b.type === "commercial") checks.push({ label: "バス停・バスターミナルの範囲内（通勤客が来られる）", ok: a.coverage.transit[i] > 0 });
     if (b.level === 3 && b.type === "industrial") checks.push({ label: "学校・大学の範囲内（技術者が集まる）", ok: a.coverage.education[i] > 0 });
   }
   return checks;

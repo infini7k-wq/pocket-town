@@ -39,7 +39,7 @@ const NEARBY: Array<{ kind: CoverageKind; icon: string; label: string }> = [
   { kind: "education", icon: "🏫", label: "学校" },
   { kind: "health", icon: "🏥", label: "病院" },
   { kind: "fire", icon: "🚒", label: "消防" },
-  { kind: "transit", icon: "🚏", label: "バス・駅" },
+  { kind: "transit", icon: "🚏", label: "バス" },
 ];
 const ZONES: BuildingType[] = ["residential", "commercial", "industrial"];
 const TRAFFIC_COLOR = ["", "text-emerald-600", "text-amber-600", "text-rose-600"];
@@ -70,7 +70,7 @@ function Meter({ label, value, max = 100 }: { label: string; value: number; max?
 
 export function TileInfo({ onClose }: { onClose: () => void }) {
   const { state, analysis: a } = useCity();
-  const { selected, toast, runAction, setOverlay } = useGame();
+  const { selected, toast, runAction, showOverlay } = useGame();
   if (selected === null) return null;
   const i = selected;
   const tile = state.tiles[i];
@@ -189,7 +189,7 @@ export function TileInfo({ onClose }: { onClose: () => void }) {
                     <button
                       key={n.kind}
                       type="button"
-                      onClick={() => setOverlay(n.kind as Parameters<typeof setOverlay>[0])}
+                      onClick={() => showOverlay(n.kind as Parameters<typeof showOverlay>[0])}
                       className={cx("rounded-lg px-1.5 py-1 text-[11px] font-bold", ok ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-400")}
                     >
                       {ok ? "✓" : "✗"} {n.icon} {n.label}
@@ -300,7 +300,7 @@ export function TileInfo({ onClose }: { onClose: () => void }) {
               }
             }}
           >
-            🚜 撤去{del.refund > 0 ? `（+${formatYen(del.refund)}）` : ""}
+            🚜 撤去{del.refund > 0 ? `（+${formatYen(del.refund)} 戻る）` : "（返金なし）"}
           </Button>
         </div>
       )}

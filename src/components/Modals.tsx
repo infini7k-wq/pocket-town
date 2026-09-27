@@ -23,7 +23,8 @@ export function EventModal() {
       <button
         type="button"
         onClick={() => setPeek(false)}
-        className="animate-sheet-in fixed bottom-[calc(160px+env(safe-area-inset-bottom))] left-1/2 z-50 -translate-x-1/2 whitespace-nowrap rounded-full bg-slate-900 px-5 py-3 text-sm font-black text-white shadow-2xl lg:bottom-8"
+        className="animate-sheet-in fixed left-1/2 z-50 -translate-x-1/2 whitespace-nowrap rounded-full bg-slate-900 px-5 py-3 text-sm font-black text-white shadow-2xl"
+        style={{ top: "calc(var(--header-h, 80px) + 12px)" }}
       >
         {view.def.emoji} 「{view.def.title}」に戻って決める
       </button>
@@ -79,10 +80,10 @@ export function EventModal() {
 const CONFETTI = ["🎉", "✨", "🎊", "⭐", "🏠", "🏢", "🌳"];
 
 export function RankUpModal() {
-  const { rankUp, closeRankUp } = useGame();
+  const { rankUp, closeRankUp, state } = useGame();
   if (!rankUp) return null;
   const rank = getRank(rankUp);
-  const unlocks = unlocksForRank(rankUp);
+  const unlocks = unlocksForRank(rankUp, state?.profile.trait);
   return (
     <Modal label="ランクアップ" onClose={closeRankUp}>
       <div className="relative overflow-hidden bg-gradient-to-br from-amber-300 via-orange-400 to-pink-500 px-6 pb-6 pt-8 text-center text-white">
@@ -261,14 +262,14 @@ export function GameOverModal() {
 
 const HELP_STEPS = [
   { icon: "🛣️", title: "道路をつなぐ", body: "建物は道路に面していないと使えません。道路は役所までつなげよう。なぞると連続で置けます。" },
-  { icon: "🏠", title: "住む・働く場所をつくる", body: "住宅・商業・工業の土地を用意すると、翌月に住民や会社が建物を建てます。「🧭 今月のおすすめ」を見れば次にやることがわかります。" },
+  { icon: "🏠", title: "住む・働く場所をつくる", body: "住宅・お店・工場は、土地を用意すると翌月に住民や会社が建てます（維持費なし）。公園・学校などの「町の施設」は町のお金で建て、毎月維持費がかかります。「🧭 今月のおすすめ」を見れば次にやることがわかります。" },
   { icon: "▶", title: "翌月へ進める", body: "人の出入り・税収・建物の成長・できごとが1か月分進みます。「⏩ 3か月」でまとめて進めることもできます。" },
   { icon: "💬", title: "住民の声を聞く", body: "困りごとと解決のヒントを教えてくれます。「📍 場所を見る」で問題の場所、ボタンで必要な建物を選べます。" },
 ];
 
 const HELP_TIPS = [
   "仕事が足りない → 商業・工業を建てる。働き手が足りない → 住宅を建てる。",
-  "お金が足りないときは、税率・借入・公共施設の撤去（40%が戻る）で立て直せます。",
+  "お金が足りないときは、税率・借入・町の施設の撤去（建設費の40%が戻る）で立て直せます。",
   "5〜7年ごとに「時代」が変わり、求められるものが変わります。予告が出たら備えよう。",
   "📋 依頼を期限内にかなえると報酬がもらえます。「市」になると大型プロジェクト（2×2）も建てられます。",
   "間違えて置いたら「↩️ 戻す」。今月の操作なら取り消せます。",
@@ -276,11 +277,11 @@ const HELP_TIPS = [
 
 /** 置き方のコツ（ベストプラクティス） */
 const PLACEMENT_TIPS: Array<{ icon: string; title: string; body: string }> = [
-  { icon: "🌳", title: "住宅のとなりには公園", body: "公園は安く、2マス先の家まで満足度と空気をよくします。住宅地のすき間に置こう。" },
-  { icon: "🛍️", title: "お店は住宅から3マス以内", body: "近くにお店があると買い物が便利になり満足度が上がります。住宅のとなりに置いても大丈夫（騒音なし）。" },
-  { icon: "🏭", title: "工場は住宅から3マス以上はなす", body: "騒音は2マス先、煙は3マス先まで届きます。公園では騒音は消えないので、距離をとるのが一番。" },
+  { icon: "🌳", title: "住宅のとなりには公園", body: "公園は安く、2マス先の家まで満足度と空気をよくします。大きな公園は4マス先まで、効き目も1.3倍。" },
+  { icon: "🛍️", title: "お店は住宅から3マス以内", body: "近くにお店があると買い物が便利になり満足度が上がります（騒音なし）。周りに住む人が多いほどスーパー・デパートに育ち、⛲広場の近くなら育ちやすくなります。" },
+  { icon: "🏭", title: "工場は住宅から3マス以上はなす", body: "騒音は2マス先、煙は3マス先まで届きます（4マスはなせば煙も安心）。間に大きな公園を置くと騒音が半分になります。" },
   { icon: "🏫", title: "学校・病院は住宅地の真ん中に", body: "学校は4マス、病院・消防署は5マス先まで届きます。1つで広くカバーできる場所を選ぼう。" },
-  { icon: "🚏", title: "バス停は大きな建物の近くに", body: "タワーマンションやオフィスビル（Lv4）には、3マス以内のバス停（または駅）が必要です。" },
+  { icon: "🚏", title: "バス停は大きな建物の近くに", body: "タワーマンションや複合ビル（Lv4）には、バス停（3マス）かバスターミナル（5マス）の範囲が必要です。" },
   { icon: "🛣️", title: "道路は格子状に、抜け道も", body: "1本の道に車が集中すると渋滞します。並行する道路や大通りで分散しよう。" },
 ];
 
@@ -401,7 +402,10 @@ export function HelpModal() {
                 ["🏥 病院", "5マス"],
                 ["🚒 消防署", "5マス"],
                 ["🚏 バス停", "3マス"],
-                ["🚉 駅", "5マス"],
+                ["🚌 バスターミナル", "5マス"],
+                ["⛲ 広場", "3マス"],
+                ["🗼 シンボルタワー", "7マス"],
+                ["🚄 新幹線駅（2×2）", "7マス"],
               ].map(([k, v]) => (
                 <div key={k} className="flex justify-between rounded-lg bg-slate-50 px-2 py-1">
                   <span>{k}</span>
@@ -428,7 +432,7 @@ export function HelpModal() {
 export function Toasts() {
   const { toasts } = useGame();
   return (
-    <div className="pointer-events-none fixed inset-x-0 top-[128px] z-[60] flex flex-col items-center gap-1.5 px-3 lg:top-20" aria-live="polite">
+    <div className="pointer-events-none fixed inset-x-0 z-[60] flex flex-col items-center gap-1.5 px-3" style={{ top: "calc(var(--header-h, 80px) + 8px)" }} aria-live="polite">
       {toasts.map((t) => (
         <div
           key={t.id}

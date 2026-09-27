@@ -7,7 +7,11 @@ import {
   checkDemolish,
   checkPlacement,
   checkReclaim,
+  demolish,
   footprint,
+  formatYen,
+  placeBuilding,
+  reclaim,
   forEachInRange,
   gridPath,
   isRoad,
@@ -17,8 +21,9 @@ import {
   readyToGrow,
   type BuildingType,
   type CoverageKind,
+  type GameState,
 } from "@/game";
-import { RANGE_OVERLAYS, useCity, useGame, type Overlay } from "../GameProvider";
+import { RANGE_OVERLAYS, useCity, useGame, type Overlay, type Tool } from "../GameProvider";
 import { cx } from "../ui";
 import { TileView } from "./TileView";
 
@@ -35,8 +40,9 @@ const RANGE_MODES: Array<{ id: Overlay; label: string; icon: string; building: B
   { id: "education", label: "学校", icon: "🏫", building: "school" },
   { id: "health", label: "病院", icon: "🏥", building: "hospital" },
   { id: "fire", label: "消防", icon: "🚒", building: "fireStation" },
-  { id: "transit", label: "バス・駅", icon: "🚏", building: "busStop" },
+  { id: "transit", label: "バス", icon: "🚏", building: "busStop" },
   { id: "shopping", label: "買い物", icon: "🛍️", building: "commercial" },
+  { id: "plaza", label: "広場", icon: "⛲", building: "plaza" },
 ];
 
 /** 範囲モードごとの半径の説明（同じ種類の施設をまとめて） */
@@ -45,8 +51,9 @@ const RANGE_RADIUS: Record<string, string> = {
   education: "学校4マス・大学8マス（2×2は建物の端から）",
   health: "病院5マス",
   fire: "消防署5マス",
-  transit: "バス停3マス・駅5マス・新幹線駅7マス",
-  shopping: "お店から3マス",
+  transit: "バス停3マス・バスターミナル5マス・新幹線駅7マス",
+  shopping: "コンビニ・スーパー3マス・デパート4マス・複合ビル5マス",
+  plaza: "広場3マス",
 };
 
 /** 地図の枠の内側の余白（角のマスが切れないように） */
@@ -86,6 +93,17 @@ export function CityMap() {
   const [pendingTap, setPendingTap] = useState<{ tool: string; tile: number } | null>(null);
   const pending = pendingTap && pendingTap.tool === tool ? pendingTap.tile : null;
   const hover = mouseHover ?? pending;
+  const [draft, setDraft] = useState<{ tool: string; tiles: number[] } | null>(null);
+  // ツールを変えたら下書きは捨てる
+  const [draftTool, setDraftTool] = useState(tool);
+  if (draftTool !== tool) {
+    setDraftTool(tool);
+    if (draft) setDraft(null);
+  }
+  const pointers = useRef(new Map<number, { x: number; y: number }>());
+  const pan = useRef<{ x: number; y: number; sl: number; st: number; wy: number } | null>(null);
+  const strokeTiles = useRef<number[]>([]);
+  const strokeHadBefore = useRef<number[]>([]);
 
   useEffect(() => {
     const el = wrapRef.current;
@@ -129,6 +147,27 @@ export function CityMap() {
     el.scrollLeft = (el.scrollWidth - el.clientWidth) / 2;
     el.scrollTop = (el.scrollHeight - el.clientHeight) / 2;
   }, [zoomed, cols]);
+
+  // 「場所を見る」：スマホでは、そのマスが画面の見える部分（ヘッダーと下のシートの間）の真ん中に来るようにする
+  useEffect(() => {
+    if (!flash || window.innerWidth >= 1024) return;
+    const timer = window.setTimeout(() => {
+      const sc = scrollRef.current;
+      const t = sc?.querySelector<HTMLElement>(`[data-i="${flash.tile}"]`);
+      if (!sc || !t) return;
+      let r = t.getBoundingClientRect();
+      if (sc.scrollHeight > sc.clientHeight + 1 || sc.scrollWidth > sc.clientWidth + 1) {
+        // 拡大中は地図の中もスクロールする
+        const s = sc.getBoundingClientRect();
+        sc.scrollBy({ left: r.left + r.width / 2 - (s.left + s.width / 2), top: r.top + r.height / 2 - (s.top + s.height / 2) });
+        r = t.getBoundingClientRect();
+      }
+      const top = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--header-h")) || 80;
+      const bottom = document.getElementById("tile-sheet")?.getBoundingClientRect().top ?? document.getElementById("mobile-bar")?.getBoundingClientRect().top ?? window.innerHeight;
+      window.scrollBy({ top: r.top + r.height / 2 - (top + bottom) / 2, behavior: "smooth" });
+    }, 60);
+    return () => window.clearTimeout(timer);
+  }, [flash]);
 
   // 大型施設（2×2）を置こうとしているときの4マス
   const footprintTiles = useMemo(() => {
@@ -192,8 +231,26 @@ export function CityMap() {
   /** なぞって連続で使えるツールか（道路・ゾーン・撤去・埋め立て） */
   const paintTool = tool !== "inspect" && (tool === "bulldoze" || tool === "reclaim" || !!BUILDINGS[tool].paintable);
 
+  // ---- スマホ：なぞった場所は「下書き」にして、合計費用を見てから確定する（2本指で地図を動かす） ----
+  const draftTiles = draft && draft.tool === tool ? draft.tiles : null;
+  const draftSim = useMemo(() => (draftTiles ? simulateStroke(state, tool, draftTiles) : null), [draftTiles, state, tool]);
+  const addToDraft = (tiles: number[]) => {
+    setDraft((d) => {
+      const base = d && d.tool === tool ? d.tiles : [];
+      const next = [...base];
+      for (const j of tiles) if (!next.includes(j)) next.push(j);
+      return { tool, tiles: next };
+    });
+  };
+  const confirmDraft = () => {
+    if (!draftTiles || draftTiles.length === 0) return;
+    draftTiles.forEach((j, k) => applyToolAt(j, k > 0));
+    endStroke();
+    setDraft(null);
+  };
+
   const onTap = (i: number) => {
-    if (tool === "inspect" || paintTool) {
+    if (tool === "inspect") {
       applyToolAt(i, false);
       return;
     }
@@ -206,20 +263,76 @@ export function CityMap() {
     }
   };
 
+  const capture = (e: React.PointerEvent) => {
+    try {
+      (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+    } catch {
+      // すでに離れた指などは無視
+    }
+  };
+
   const onPointerDown = (e: React.PointerEvent) => {
     if (e.pointerType === "mouse" && e.button !== 0) return;
+    if (e.pointerType !== "mouse" && paintTool) {
+      pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (pointers.current.size >= 2) {
+        // 2本目の指：なぞっていた分を取り消して、地図を動かすモードへ
+        const stroke = strokeTiles.current;
+        if (stroke.length > 0) setDraft((d) => (d ? { ...d, tiles: d.tiles.filter((j) => !stroke.includes(j) || strokeHadBefore.current.includes(j)) } : d));
+        strokeTiles.current = [];
+        lastTile.current = null;
+        const pts = [...pointers.current.values()];
+        const sc = scrollRef.current;
+        pan.current = { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2, sl: sc?.scrollLeft ?? 0, st: sc?.scrollTop ?? 0, wy: window.scrollY };
+        return;
+      }
+      const i = tileAt(e.clientX, e.clientY);
+      if (i === null) return;
+      capture(e);
+      strokeHadBefore.current = draftTiles ?? [];
+      strokeTiles.current = [i];
+      lastTile.current = i;
+      addToDraft([i]);
+      return;
+    }
     const i = tileAt(e.clientX, e.clientY);
     if (i === null) return;
-    if (e.pointerType !== "mouse" && !paintTool) {
+    if (e.pointerType !== "mouse") {
       touchStart.current = { x: e.clientX, y: e.clientY, tile: i };
       return;
     }
     painting.current = true;
     lastTile.current = i;
-    if (tool !== "inspect") (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+    if (tool !== "inspect") capture(e);
     applyToolAt(i, false);
   };
   const onPointerMove = (e: React.PointerEvent) => {
+    if (e.pointerType !== "mouse" && paintTool) {
+      if (!pointers.current.has(e.pointerId)) return;
+      pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      const p = pan.current;
+      if (p && pointers.current.size >= 2) {
+        const pts = [...pointers.current.values()];
+        const dx = (pts[0].x + pts[1].x) / 2 - p.x;
+        const dy = (pts[0].y + pts[1].y) / 2 - p.y;
+        const sc = scrollRef.current;
+        if (sc && (sc.scrollHeight > sc.clientHeight + 1 || sc.scrollWidth > sc.clientWidth + 1)) {
+          sc.scrollLeft = p.sl - dx;
+          sc.scrollTop = p.st - dy;
+        } else {
+          window.scrollTo({ top: p.wy - dy });
+        }
+        return;
+      }
+      if (pan.current || lastTile.current === null) return;
+      const i = tileAt(e.clientX, e.clientY);
+      if (i === null || i === lastTile.current) return;
+      const path = gridPath(lastTile.current, i, state.width);
+      lastTile.current = i;
+      strokeTiles.current = [...strokeTiles.current, ...path];
+      addToDraft(path);
+      return;
+    }
     const i = tileAt(e.clientX, e.clientY);
     if (e.pointerType === "mouse") setHover(i);
     if (painting.current && tool !== "inspect" && i !== null && i !== lastTile.current) {
@@ -230,6 +343,18 @@ export function CityMap() {
     }
   };
   const onPointerUp = (e: React.PointerEvent) => {
+    if (e.pointerType !== "mouse" && paintTool) {
+      pointers.current.delete(e.pointerId);
+      if (pointers.current.size === 0) {
+        pan.current = null;
+        lastTile.current = null;
+        // 1マスだけの下書きで、同じマスをもう一度タップしたら確定
+        const stroke = strokeTiles.current;
+        if (stroke.length === 1 && strokeHadBefore.current.length === 1 && strokeHadBefore.current[0] === stroke[0]) confirmDraft();
+        strokeTiles.current = [];
+      }
+      return;
+    }
     const start = touchStart.current;
     touchStart.current = null;
     if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) < 10) onTap(start.tile);
@@ -318,9 +443,10 @@ export function CityMap() {
           badge={badge}
           selected={selected === i}
           flashKey={flash?.tile === i ? flash.key : undefined}
-          preview={(footprintTiles ? footprintTiles.has(i) : hover === i) && preview ? (preview.ok ? "ok" : "bad") : undefined}
-          previewEmoji={hover === i && preview?.ok ? preview.emoji : undefined}
+          preview={draftSim?.ok.has(i) ? "ok" : draftSim?.bad.has(i) ? "bad" : (footprintTiles ? footprintTiles.has(i) : hover === i) && preview ? (preview.ok ? "ok" : "bad") : undefined}
+          previewEmoji={draftSim?.ok.has(i) ? draftSim.emoji : hover === i && preview?.ok ? preview.emoji : undefined}
           bigSize={b ? BUILDINGS[b.type].size : undefined}
+          railSide={b?.type === "bulletTrain" ? railSideOf(x, y, state.width, state.height) : undefined}
           buildLeft={b?.buildLeft}
           inRange={rangeTiles.has(i)}
           rangeEdge={edgeSet ? edgeOf(i, x, y) : undefined}
@@ -334,7 +460,7 @@ export function CityMap() {
   const hoverPos = hover !== null ? toXY(hover, state.width) : null;
 
   return (
-    <div className="flex flex-col gap-2">
+    <div id="city-map" className="flex flex-col gap-2" style={{ scrollMarginTop: "calc(var(--header-h, 80px) + 8px)" }}>
       {/* 表示切り替え */}
       <div className="no-scrollbar -mx-1 flex items-center gap-1 overflow-x-auto px-1">
         {VIEW_MODES.map((o) => (
@@ -354,7 +480,7 @@ export function CityMap() {
         </button>
       </div>
 
-      <div ref={wrapRef} id="city-map" className="relative w-full scroll-mt-40">
+      <div ref={wrapRef} className="relative w-full">
         <div
           ref={scrollRef}
           className={cx("relative mx-auto rounded-2xl bg-white/85 shadow-lg shadow-emerald-900/10 ring-1 ring-slate-900/5", zoomed ? "no-scrollbar max-h-[72dvh] overflow-auto" : "overflow-hidden")}
@@ -374,8 +500,10 @@ export function CityMap() {
             onPointerDown={onPointerDown}
             onPointerMove={onPointerMove}
             onPointerUp={onPointerUp}
-            onPointerCancel={() => {
+            onPointerCancel={(e) => {
               touchStart.current = null;
+              pointers.current.delete(e.pointerId);
+              if (pointers.current.size === 0) pan.current = null;
               stopPainting();
             }}
             onPointerLeave={() => {
@@ -426,8 +554,28 @@ export function CityMap() {
           </div>
         )}
       </div>
-      {zoomed && tool !== "inspect" && (tool === "bulldoze" || tool === "reclaim" || BUILDINGS[tool].paintable) && (
-        <p className="px-1 text-[11px] font-bold text-slate-400">地図を動かすときは 👆 調べる を選んでからスワイプ</p>
+      {paintTool && (
+        <p className="px-1 text-[11px] font-bold text-slate-400 lg:hidden">なぞると下書き → 下の「✓ 建設」で確定。2本指で地図・画面を動かせます</p>
+      )}
+      {draftTiles && draftSim && draftTiles.length > 0 && (
+        <div className="fixed inset-x-2 z-50 flex items-center gap-2 rounded-2xl bg-slate-900/95 px-3 py-2 text-white shadow-2xl lg:hidden" style={{ bottom: "calc(156px + env(safe-area-inset-bottom))" }}>
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-xs font-black">
+              {draftSim.label} {draftSim.ok.size}マス
+              {draftSim.bad.size > 0 && <span className="ml-1 text-rose-300">（{draftSim.bad.size}マスは不可）</span>}
+            </div>
+            <div className="tabular text-[11px] font-bold text-slate-300">
+              {draftSim.cost >= 0 ? `費用 ${formatYen(draftSim.cost)}` : `返金 +${formatYen(-draftSim.cost)}`}
+              {draftSim.reason && <span className="ml-1 text-rose-300">{draftSim.reason}</span>}
+            </div>
+          </div>
+          <button type="button" onClick={() => setDraft(null)} className="rounded-full bg-white/15 px-3 py-2 text-xs font-black">
+            ✕ やめる
+          </button>
+          <button type="button" onClick={confirmDraft} disabled={draftSim.ok.size === 0} className="rounded-full bg-orange-500 px-4 py-2 text-xs font-black disabled:opacity-40">
+            ✓ 建設
+          </button>
+        </div>
       )}
       <MapLegend key={overlay} overlay={overlay} hasRange={!covKind || analysis.coverage[covKind].some((v) => v > 0)} />
     </div>
@@ -535,4 +683,52 @@ function MapLegend({ overlay, hasRange }: { overlay: Overlay; hasRange: boolean 
       {open && <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-slate-500">{items}</div>}
     </div>
   );
+}
+
+/**
+ * なぞった下書きを、実際に建てた場合の結果として計算する（状態は変えない）。
+ * 確定時の applyToolAt と同じルール：すでに建物があるマスは飛ばす、ドラッグでは公共施設を壊さない など。
+ */
+function simulateStroke(state: GameState, tool: Tool, tiles: number[]) {
+  const ok = new Set<number>();
+  const bad = new Set<number>();
+  let cur = state;
+  let reason: string | undefined;
+  tiles.forEach((i, k) => {
+    const painting = k > 0;
+    const t = cur.tiles[i];
+    if (!t) return;
+    let r;
+    if (tool === "bulldoze") {
+      const b = t.building;
+      if (!b || (painting && BUILDINGS[b.type].category !== "zone" && !isRoad(b.type))) return;
+      r = demolish(cur, i);
+    } else if (tool === "reclaim") {
+      if (t.terrain !== "water" || t.building) return;
+      r = reclaim(cur, i);
+    } else if (tool !== "inspect") {
+      const existing = t.building?.type;
+      if (existing && !(tool === "avenue" && existing === "road")) return;
+      r = placeBuilding(cur, tool, i);
+    } else return;
+    if (r.ok) {
+      ok.add(i);
+      cur = r.state;
+    } else {
+      bad.add(i);
+      reason ??= r.error;
+    }
+  });
+  const label = tool === "bulldoze" ? "🚜 撤去" : tool === "reclaim" ? "🏝️ 埋め立て" : tool === "inspect" ? "" : `${BUILDINGS[tool].emoji[1]} ${BUILDINGS[tool].name}`;
+  const emoji = tool === "bulldoze" ? "🚜" : tool === "reclaim" ? "🟩" : tool === "inspect" ? "" : buildingEmoji(tool, 1);
+  return { ok, bad, cost: state.money - cur.money, reason, label, emoji };
+}
+
+/** 新幹線駅（2×2、(x,y) が左上）が面している地図の端 */
+function railSideOf(x: number, y: number, w: number, h: number): "top" | "right" | "bottom" | "left" | undefined {
+  if (x === 0) return "left";
+  if (x + 1 === w - 1) return "right";
+  if (y === 0) return "top";
+  if (y + 1 === h - 1) return "bottom";
+  return undefined;
 }

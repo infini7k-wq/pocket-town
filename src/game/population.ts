@@ -67,7 +67,7 @@ export function happinessFactors(state: GameState, i: number, ctx: HappinessCont
   const add = (label: string, value: number) => {
     if (Math.abs(value) >= 0.5) out.push({ label, value });
   };
-  add("公園", c.park[i] * HAPPINESS.park * w.park);
+  add(c.park[i] > 1 ? "大きな公園" : "公園", c.park[i] * HAPPINESS.park * w.park);
   add("学校", c.education[i] * HAPPINESS.education * w.education);
   add("病院", c.health[i] * HAPPINESS.health * w.health);
   add("消防", c.fire[i] * HAPPINESS.fire);

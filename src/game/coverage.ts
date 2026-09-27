@@ -1,7 +1,7 @@
 // 公共施設・商業などの効果範囲（カバー率）を計算する。
 
 import { BUILDINGS } from "./buildings";
-import { DISCONNECTED_FACTOR } from "./config";
+import { DISCONNECTED_FACTOR, SHOP_RADIUS } from "./config";
 import { forEachInRange } from "./map";
 import type { RoadNetwork } from "./roads";
 import type { CoverageKind, GameState } from "./types";
@@ -34,8 +34,10 @@ export function computeCoverage(state: Pick<GameState, "tiles" | "width" | "heig
       strength *= SHOPPING_STRENGTH[b.level] ?? 1;
     }
     const target = map[def.coverage.kind];
-    forEachInRange(i, def.size ?? 1, def.coverage.radius, state.width, state.height, (j, d) => {
-      const v = strength * falloff(d, def.coverage!.radius);
+    // お店は大きいほど遠くから客が来る
+    const radius = b.type === "commercial" ? (SHOP_RADIUS[b.level] ?? def.coverage.radius) : def.coverage.radius;
+    forEachInRange(i, def.size ?? 1, radius, state.width, state.height, (j, d) => {
+      const v = strength * falloff(d, radius);
       if (v > target[j]) target[j] = v;
     });
   });

@@ -3,9 +3,11 @@
 import {
   BUILDINGS,
   ECONOMY,
-  PROJECTS,
+  projectsFor,
   cityScore,
   nextAdvice,
+  demandLevel,
+  DEMAND,
   getScenario,
   weakestPart,
   describeEffects,
@@ -50,12 +52,12 @@ export function SidePanel() {
   const { panelTab, setPanelTab } = useGame();
   const badVoices = state.voices.filter((v) => v.tone === "bad").length;
   return (
-    <div id="side-panel" className="flex scroll-mt-40 flex-col gap-3">
+    <div id="side-panel" className="flex flex-col gap-3">
       <ScenarioCard />
       <MissionCard />
       <AdviceCard />
       <RequestsCard />
-      <div className="grid grid-cols-4 gap-1 rounded-2xl bg-white/70 p-1 ring-1 ring-slate-900/5" role="tablist">
+      <div id="side-panel-tabs" className="grid grid-cols-4 gap-1 rounded-2xl bg-white/70 p-1 ring-1 ring-slate-900/5" style={{ scrollMarginTop: "calc(var(--header-h, 80px) + 8px)" }} role="tablist">
         {TABS.map((t) => (
           <button
             key={t.id}
@@ -117,8 +119,9 @@ function NextGoalCard() {
   const { state, analysis } = useCity();
   const { pickTool } = useGame();
   const next = nextRank(state.rank);
-  const project = PROJECTS.find((p) => isBuildingUnlocked(p, state.rank) && !state.tiles.some((t) => t.building?.type === p));
-  const lockedProject = PROJECTS.find((p) => !isBuildingUnlocked(p, state.rank));
+  const projects = projectsFor(state.profile.trait);
+  const project = projects.find((p) => isBuildingUnlocked(p, state.rank) && !state.tiles.some((t) => t.building?.type === p));
+  const lockedProject = projects.find((p) => !isBuildingUnlocked(p, state.rank));
   if (!next && !project) return <BeyondCard />;
   return (
     <section className="rounded-2xl bg-gradient-to-br from-sky-50 to-indigo-50 p-3.5 shadow-sm ring-1 ring-indigo-100">
@@ -160,7 +163,7 @@ function NextGoalCard() {
 /** メガシティのあと：街の評価と、残りの目標 */
 function BeyondCard() {
   const { state, analysis } = useCity();
-  const { setPanelTab } = useGame();
+  const { openPanel } = useGame();
   const score = cityScore(state, analysis);
   const weak = weakestPart(score);
   const left = GOALS.filter((g) => !state.achievements.includes(g.id)).slice(0, 3);
@@ -168,7 +171,7 @@ function BeyondCard() {
     <section className="rounded-2xl bg-gradient-to-br from-violet-50 to-fuchsia-50 p-3.5 shadow-sm ring-1 ring-violet-100">
       <div className="flex items-center justify-between">
         <span className="text-[11px] font-black text-violet-700">🌃 メガシティのその先へ</span>
-        <button type="button" onClick={() => setPanelTab("goals")} className="text-[10px] font-bold text-violet-600 hover:underline">
+        <button type="button" onClick={() => openPanel("goals")} className="-my-1 rounded-full bg-white/80 px-2.5 py-1.5 text-[11px] font-bold text-violet-700 hover:bg-white">
           目標タブ →
         </button>
       </div>
@@ -206,7 +209,7 @@ const GRADE_COLOR: Record<string, string> = {
 // ---------------- 今月のおすすめ ----------------
 function AdviceCard() {
   const { state, analysis } = useCity();
-  const { pickTool, setPanelTab, focusTile } = useGame();
+  const { pickTool, openPanel, focusTile } = useGame();
   const advice = nextAdvice(state, analysis);
   // ミッション中はミッションのカードが案内するので出さない
   if (!advice || advice.id === "mission") return null;
@@ -235,7 +238,7 @@ function AdviceCard() {
             </button>
           )}
           {advice.openTab === "finance" && (
-            <button type="button" onClick={() => setPanelTab("finance")} className="rounded-full bg-violet-600 px-2.5 py-1 text-[11px] font-black text-white hover:bg-violet-700">
+            <button type="button" onClick={() => openPanel("finance")} className="rounded-full bg-violet-600 px-2.5 py-1 text-[11px] font-black text-white hover:bg-violet-700">
               💴 財政を開く
             </button>
           )}
@@ -248,14 +251,13 @@ function AdviceCard() {
 /** スマホ：地図の上に出す1行のおすすめ（タップで対応する建物・画面へ） */
 export function AdviceStrip() {
   const { state, analysis } = useCity();
-  const { pickTool, setPanelTab, focusTile } = useGame();
+  const { pickTool, openPanel, focusTile } = useGame();
   const advice = nextAdvice(state, analysis);
   if (!advice || advice.id === "steady") return null;
   const act = () => {
     if (advice.tool) pickTool(advice.tool);
     else if (advice.openTab === "finance") {
-      setPanelTab("finance");
-      document.getElementById("side-panel")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      openPanel("finance");
     } else if (advice.tile !== undefined) focusTile(advice.tile);
   };
   return (
@@ -315,7 +317,7 @@ function ScenarioCard() {
 // ---------------- 陳情・依頼 ----------------
 function RequestsCard() {
   const { state, analysis } = useCity();
-  const { pickTool, setPanelTab } = useGame();
+  const { pickTool, openPanel } = useGame();
   const views = state.requests.map((r) => describeRequest(r, state, analysis)).filter((v) => v !== null);
   if (views.length === 0) return null;
   return (
@@ -350,7 +352,7 @@ function RequestsCard() {
                   {BUILDINGS[v.kind.tool].emoji[1]} {BUILDINGS[v.kind.tool].name}
                 </button>
               ) : v.kind.id === "surplus" ? (
-                <button type="button" onClick={() => setPanelTab("finance")} className="shrink-0 rounded-full bg-violet-50 px-2 py-0.5 text-[10px] font-bold text-violet-700">
+                <button type="button" onClick={() => openPanel("finance")} className="shrink-0 rounded-full bg-violet-50 px-2 py-0.5 text-[10px] font-bold text-violet-700">
                   💴 財政
                 </button>
               ) : null}
@@ -366,7 +368,7 @@ function RequestsCard() {
 // ---------------- 住民の声 ----------------
 function VoicesPanel() {
   const { state, analysis } = useCity();
-  const { focusTile, pickTool, setPanelTab } = useGame();
+  const { focusTile, pickTool, openPanel } = useGame();
   return (
     <>
       <Card title="住民の声" icon="💬" action={<span className="text-[11px] font-bold text-slate-400">{formatDate(state.turn)}</span>}>
@@ -400,7 +402,7 @@ function VoicesPanel() {
                       </button>
                     )}
                     {v.openTab === "finance" && (
-                      <button type="button" onClick={() => setPanelTab("finance")} className="rounded-full bg-violet-50 px-2 py-0.5 text-[11px] font-bold text-violet-700 hover:bg-violet-100">
+                      <button type="button" onClick={() => openPanel("finance")} className="rounded-full bg-violet-50 px-2 py-0.5 text-[11px] font-bold text-violet-700 hover:bg-violet-100">
                         💴 財政を見る
                       </button>
                     )}
@@ -519,18 +521,41 @@ function NewsCard({ state }: { state: GameState; analysis: CityAnalysis }) {
 }
 
 // ---------------- 街の状況 ----------------
-function DemandBar({ label, value, color }: { label: string; value: number; color: string }) {
+const DEMAND_TONE = { high: "text-emerald-600", some: "text-emerald-600", ok: "text-slate-500", spare: "text-slate-400" };
+
+/** 需要メーター：真ん中の薄い帯が「足りている」。右に伸びるほど不足、左は空きあり */
+function DemandBar({ label, value, color, note }: { label: string; value: number; color: string; note: string }) {
   const pct = Math.abs(value) / 2;
+  const level = demandLevel(value);
+  // -100〜100 を 0〜100% に。「足りている」帯は DEMAND.spare〜DEMAND.some
+  const bandLeft = 50 + DEMAND.spare / 2;
+  const bandWidth = (DEMAND.some - DEMAND.spare) / 2;
   return (
-    <div className="flex items-center gap-2 text-xs font-bold">
-      <span className="w-8 shrink-0 text-slate-600">{label}</span>
-      <div className="relative h-3 flex-1 rounded-full bg-slate-100">
-        <div className="absolute left-1/2 top-0 h-full w-px bg-slate-300" />
-        <div className={cx("absolute top-0 h-full rounded-full transition-all duration-500", value >= 0 ? color : "bg-slate-400")} style={value >= 0 ? { left: "50%", width: `${pct}%` } : { right: "50%", width: `${pct}%` }} />
+    <div>
+      <div className="flex items-center gap-2 text-xs font-bold">
+        <span className="w-8 shrink-0 text-slate-600">{label}</span>
+        <div className="relative h-3 flex-1 overflow-hidden rounded-full bg-slate-100">
+          <div className="absolute top-0 h-full bg-emerald-100" style={{ left: `${bandLeft}%`, width: `${bandWidth}%` }} />
+          <div className="absolute left-1/2 top-0 h-full w-px bg-slate-300" />
+          <div className={cx("absolute top-0 h-full rounded-full transition-all duration-500", value >= 0 ? color : "bg-slate-400")} style={value >= 0 ? { left: "50%", width: `${pct}%` } : { right: "50%", width: `${pct}%` }} />
+        </div>
+        <span className={cx("w-16 shrink-0 text-right", DEMAND_TONE[level.tone])}>{level.tone === "ok" ? "✓ " : ""}{level.label}</span>
       </div>
-      <span className={cx("tabular w-12 shrink-0 text-right", value > 20 ? "text-emerald-600" : value < -20 ? "text-rose-500" : "text-slate-500")}>{value > 20 ? "高い" : value < -20 ? "低い" : "ふつう"}</span>
+      <div className="ml-10 mt-0.5 text-[10px] font-bold text-slate-400">{note}</div>
     </div>
   );
+}
+
+/** 需要メーターの下に出す、ひとこと理由 */
+function demandNotes(a: CityAnalysis): Record<ZoneType, string> {
+  const emp = a.employment;
+  const vacant = Math.max(0, Math.round(emp.housingCapacity - a.population));
+  const lots = (v: number, support: number, per: number) => Math.max(1, Math.round(((v / 120) * Math.max(support, 30)) / per));
+  return {
+    residential: a.demand.residential > DEMAND.some ? `空き部屋が少ない（あと${formatNumber(vacant)}人分）。住宅を建てると人が来る` : `空き部屋 ${formatNumber(vacant)}人分`,
+    commercial: a.demand.commercial > DEMAND.some ? `お店があと約${lots(a.demand.commercial, emp.comSupport, 8)}区画分成り立つ` : `お店の数はちょうどいい（お客さん ${Math.round(emp.comEfficiency * 100)}%）`,
+    industrial: a.demand.industrial > DEMAND.some ? `工場があと約${lots(a.demand.industrial, emp.indSupport, 14)}区画分成り立つ` : `工場の数はちょうどいい（注文 ${Math.round(emp.indEfficiency * 100)}%）`,
+  };
 }
 
 function coverageShare(state: GameState, a: CityAnalysis, kind: "park" | "education" | "health" | "fire"): number {
@@ -546,6 +571,7 @@ function CityPanel() {
   const emp = a.employment;
   const trait = TRAITS[state.profile.trait];
   const pops = state.history.map((h) => h.population);
+  const notes = demandNotes(a);
   return (
     <>
       <Card title={townStyle(state, a)} icon="">
@@ -570,13 +596,13 @@ function CityPanel() {
 
       <EraCard />
 
-      <Card title="建設の需要" icon="📐">
+      <Card title="足りないもの（建設の需要）" icon="📐">
         <div className="space-y-2">
-          <DemandBar label="🏠住宅" value={a.demand.residential} color="bg-emerald-500" />
-          <DemandBar label="🏪商業" value={a.demand.commercial} color="bg-blue-500" />
-          <DemandBar label="🏭工業" value={a.demand.industrial} color="bg-amber-500" />
+          <DemandBar label="🏠住宅" value={a.demand.residential} color="bg-emerald-500" note={notes.residential} />
+          <DemandBar label="🏪商業" value={a.demand.commercial} color="bg-blue-500" note={notes.commercial} />
+          <DemandBar label="🏭工業" value={a.demand.industrial} color="bg-amber-500" note={notes.industrial} />
         </div>
-        <p className="mt-2 text-[11px] font-bold text-slate-500">需要が「高い」ものを建てると、すぐに建物が育ちます。</p>
+        <p className="mt-2 text-[11px] font-bold text-slate-500">右に伸びるほど足りない（建てるとすぐ埋まる）。真ん中の緑の帯に入れば「足りている」。造成中の区画も数に入ります。</p>
       </Card>
 
       <Card title="雇用と暮らし" icon="💼">
@@ -590,7 +616,7 @@ function CityPanel() {
         </div>
       </Card>
 
-      <Card title="公共サービス（住民のカバー率）" icon="🏛️">
+      <Card title="町の施設が届いている住民" icon="🏛️">
         <div className="space-y-2">
           {(
             [
@@ -701,7 +727,7 @@ function FinancePanel() {
       {state.money < 0 && (
         <div className="rounded-2xl bg-rose-600 p-3 text-white shadow">
           <div className="text-sm font-black">⚠️ 資金がマイナスです（{state.debtMonths}/{ECONOMY.bankruptcyMonths}か月）</div>
-          <p className="mt-1 text-xs font-bold text-rose-100">このまま{ECONOMY.bankruptcyMonths}か月続くと財政破綻です。お金を借りる・税を上げる・公共施設を撤去する（40%が戻る）で立て直そう。</p>
+          <p className="mt-1 text-xs font-bold text-rose-100">このまま{ECONOMY.bankruptcyMonths}か月続くと財政破綻です。お金を借りる・税を上げる・町の施設を撤去する（建設費の40%が戻る）で立て直そう。</p>
         </div>
       )}
       <Card title="税率" icon="🧾">
@@ -738,7 +764,7 @@ function FinancePanel() {
           {b.income.facilities > 0 && <MoneyRow label="🏟️ 施設収入" value={b.income.facilities} />}
           <div className="pt-1 text-[11px] text-slate-400">支出</div>
           <MoneyRow label="🛣️ 道路の維持費" value={-b.expense.roads} />
-          <MoneyRow label="🏛️ 公共施設の維持費" value={-b.expense.services} />
+          <MoneyRow label="🏛️ 町の施設の維持費" value={-b.expense.services} />
           <MoneyRow label="🗂️ 行政サービス費" value={-b.expense.admin} />
           {b.expense.interest > 0 && <MoneyRow label="💳 利息" value={-b.expense.interest} />}
           <div className="flex justify-between border-t border-slate-100 pt-1 text-sm">
@@ -845,7 +871,7 @@ function GoalsPanel() {
               {idx > 0 && (
                 <div className="mt-1 text-[11px] font-bold leading-relaxed text-slate-500">
                   {idx > cur ? "🔒 " : ""}
-                  {unlocksForRank(r.id).join(" / ")}
+                  {unlocksForRank(r.id, state.profile.trait).join(" / ")}
                 </div>
               )}
             </li>

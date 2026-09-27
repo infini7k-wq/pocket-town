@@ -151,7 +151,7 @@ export function voiceCandidates(state: GameState, a: CityAnalysis, report: Month
   // ---------- お金（いちばん大事なので最優先） ----------
   if (state.money < 0) {
     const left = Math.max(1, ECONOMY.bankruptcyMonths - state.debtMonths);
-    out.push({ id: "debt", openTab: "finance", severity: 200, tone: "bad", persona: "worker", text: `資金がマイナス！あと${left}か月で財政破綻してしまう…`, hint: "お金を借りる・税を少し上げる・公共施設を撤去する（建設費の40%が戻る）で立て直そう" });
+    out.push({ id: "debt", openTab: "finance", severity: 200, tone: "bad", persona: "worker", text: `資金がマイナス！あと${left}か月で財政破綻してしまう…`, hint: "お金を借りる・税を少し上げる・町の施設を撤去する（建設費の40%が戻る）で立て直そう" });
   } else if (net < 0) {
     const left = Math.floor(state.money / -net);
     out.push({
@@ -204,7 +204,7 @@ export function voiceCandidates(state: GameState, a: CityAnalysis, report: Month
       tone: "bad",
       persona: "resident",
       text: airport ? "飛行機の音がうるさくて眠れない！" : "工場の騒音がひどい！夜も眠れない。",
-      hint: airport ? "空港のまわり3マスには住宅を建てないようにしよう" : "騒音は工場から2マス先まで届く。住宅と工場は3マス以上はなそう（公園では消えない）",
+      hint: airport ? "空港のまわり3マスには住宅を建てないようにしよう" : "騒音は工場から2マス先まで届く。住宅と工場は3マス以上はなすか、間に大きな公園を置こう（騒音が半分に）",
       tile: noisiest,
     });
   }
@@ -227,7 +227,7 @@ export function voiceCandidates(state: GameState, a: CityAnalysis, report: Month
   if (pop > 150) {
     const noPark = worstResidential(state, (i) => a.coverage.park[i] === 0);
     if (noPark.share > 0.45) {
-      out.push({ id: "park", tool: rank >= 1 ? "bigPark" : "park", severity: noPark.share * 32, tone: "bad", persona: "kid", text: "近くに遊べる公園がほしいな。", hint: rank >= 1 ? "公園は道路の向かいまで、大きな公園は4マス先まで効く" : "公園は安くて、道路の向かいの家まで効く", tile: noPark.tile });
+      out.push({ id: "park", tool: rank >= 1 ? "bigPark" : "park", severity: noPark.share * 32, tone: "bad", persona: "kid", text: "近くに遊べる公園がほしいな。", hint: rank >= 1 ? "公園は2マス先、大きな公園は4マス先まで効く（大きな公園は効き目も1.3倍）" : "公園は安くて、2マス先の家まで効く", tile: noPark.tile });
     }
     const noShop = worstResidential(state, (i) => a.coverage.shopping[i] === 0);
     if (noShop.share > 0.35) {
@@ -293,7 +293,7 @@ export function voiceCandidates(state: GameState, a: CityAnalysis, report: Month
     const n = blocked.count;
     const map: Record<string, { text: string; hint: string; tool?: BuildingType; persona: keyof typeof PERSONAS }> = {
       school: { persona: "parent", text: `マンションに建て替えたいのに、学校が遠くて…（${n}棟が待っているよ）`, hint: "学校（範囲4マス）や大学（範囲8マス）の近くの住宅がマンションに育つ", tool: "school" },
-      transit: { persona: "worker", text: `タワーマンションやオフィスビルは、バス停か駅が近くにないと建たないんだって（${n}棟）`, hint: "バス停（範囲3マス）や駅（範囲5マス）を置こう", tool: isBuildingUnlocked("busStop", state.rank) ? "busStop" : "road" },
+      transit: { persona: "worker", text: `タワーマンションや複合ビルは、バス停かバスターミナルが近くにないと建たないんだって（${n}棟）`, hint: "バス停（範囲3マス）やバスターミナル（範囲5マス）を置こう", tool: isBuildingUnlocked("busStop", state.rank) ? "busStop" : "road" },
       happiness: { persona: "resident", text: `住みやすさが足りなくて、家を大きくできないみたい（${n}棟）`, hint: "公園・学校・病院の範囲を広げ、騒音や渋滞を減らそう", tool: rank >= 1 ? "bigPark" : "park" },
       env: { persona: "resident", text: `空気が悪くて、大きな家が建たないみたい（${n}棟）`, hint: "工場から離すか、公園を増やして空気をきれいにしよう", tool: "park" },
       customers: { persona: "shop", text: `お客さんが足りなくて、お店を大きくできないよ（${n}棟）`, hint: "住宅を増やしてお客さんを呼ぼう", tool: "residential" },

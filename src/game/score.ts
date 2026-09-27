@@ -71,7 +71,7 @@ export function cityScore(s: GameState, a: CityAnalysis): CityScore {
       emoji: "🚗",
       max: 100,
       value: 100 * clamp01((40 - a.congestion) / 40),
-      hint: "大通り・バス停・駅で渋滞を減らそう",
+      hint: "大通り・バス停・バスターミナルで渋滞を減らそう",
     },
     {
       id: "employment",

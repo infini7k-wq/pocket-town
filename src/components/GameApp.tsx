@@ -112,7 +112,7 @@ function GameScreen() {
 
       {/* スマホ：選択したマスの詳細はボトムシートで */}
       {selected !== null && (
-        <div className="animate-sheet-in fixed inset-x-2 bottom-[calc(150px+env(safe-area-inset-bottom))] z-40 max-h-[42dvh] overflow-y-auto rounded-3xl bg-white p-4 shadow-2xl ring-1 ring-slate-900/10 lg:hidden">
+        <div id="tile-sheet" className="animate-sheet-in fixed inset-x-2 bottom-[calc(150px+env(safe-area-inset-bottom))] z-40 max-h-[36dvh] overflow-y-auto rounded-3xl bg-white p-4 shadow-2xl ring-1 ring-slate-900/10 lg:hidden">
           <TileInfo onClose={() => select(null)} />
         </div>
       )}

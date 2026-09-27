@@ -21,6 +21,11 @@ export type BuildingType =
   | "bulletTrain"
   | "themePark"
   | "airport"
+  /** 町の個性ごとの専用プロジェクト */
+  | "forestPark"
+  | "kombinat"
+  | "marina"
+  | "arcade"
   /** 2×2 の大型施設の、アンカー以外の3マス */
   | "annex";
 

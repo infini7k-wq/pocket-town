@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { BUILD_ORDER, BUILDINGS, ECONOMY, PROJECTS, buildCost, formatYen, getRank, isBuildingUnlocked, rankIndex } from "@/game";
+import { BUILD_ORDER, BUILDINGS, ECONOMY, TRAIT_PROJECTS, buildCost, formatYen, getRank, isBuildingUnlocked, projectsFor, rankIndex } from "@/game";
 import { useCity, useGame, type Tool } from "./GameProvider";
 import { NextMonthButton } from "./TopBar";
 import { cx } from "./ui";
@@ -21,7 +21,7 @@ export function useTools(): ToolDef[] {
   const sample = state.tiles.findIndex((t) => t.terrain === "grass" && !t.building);
   return [
     { id: "inspect", emoji: "👆", name: "調べる", hint: "マスをタップして詳細を見る" },
-    ...BUILD_ORDER.map((type): ToolDef => {
+    ...[...BUILD_ORDER, TRAIT_PROJECTS[state.profile.trait]].map((type): ToolDef => {
       const def = BUILDINGS[type];
       const unlocked = isBuildingUnlocked(type, state.rank);
       return {
@@ -31,14 +31,14 @@ export function useTools(): ToolDef[] {
         cost: buildCost(state, type, Math.max(0, sample)),
         locked: unlocked ? undefined : `${getRank(def.unlockRank).name}で解禁`,
         hint:
-          (def.size === 2 ? `【2×2・工事${def.buildMonths}か月・1つの街に1つ】` : "") +
           def.description +
-          (def.coverage && def.coverage.kind !== "shopping" ? `（範囲${def.coverage.radius}マス${def.size === 2 ? "・建物の端から" : ""}）` : "") +
-          (def.upkeep ? ` / 維持費 ${formatYen(def.upkeep)}/月` : "") +
-          (type === "road" ? " / 水の上は橋になる" : ""),
+          (def.size === 2 ? `｜2×2・工事${def.buildMonths}か月` : "") +
+          (def.coverage && def.coverage.kind !== "shopping" ? `｜範囲${def.coverage.radius}マス` : "") +
+          (def.upkeep ? `｜維持${formatYen(def.upkeep, { compact: true })}/月` : "") +
+          (type === "road" ? "｜水の上は橋になる" : ""),
       };
     }),
-    { id: "bulldoze", emoji: "🚜", name: "撤去", hint: "建物を壊す。今月建てたものは全額、公共施設は40%が戻る" },
+    { id: "bulldoze", emoji: "🚜", name: "撤去", hint: "壊す。今月建てた物は全額、町の施設・大型は建設費の40%が戻る（住宅・お店・工場は0）" },
     {
       id: "reclaim",
       emoji: "🏝️",
@@ -63,26 +63,33 @@ function costLabel(t: ToolDef): string {
 
 /** スマホのメニューの分類 */
 const MOBILE_GROUPS: Array<{ id: string; label: string; ids: Tool[] }> = [
-  { id: "basic", label: "道路・ゾーン", ids: ["road", "avenue", "residential", "commercial", "industrial"] },
-  { id: "service", label: "公共施設", ids: ["park", "bigPark", "school", "hospital", "fireStation", "busStop", "plaza", "station", "landmark"] },
-  { id: "project", label: "大型", ids: [...PROJECTS, "reclaim"] },
+  { id: "basic", label: "道路・土地", ids: ["road", "avenue", "residential", "commercial", "industrial"] },
+  { id: "service", label: "町の施設", ids: ["park", "bigPark", "school", "hospital", "fireStation", "busStop", "plaza", "station", "landmark"] },
+  { id: "project", label: "大型", ids: ["reclaim"] },
 ];
+
+/** 分類ごとの建物（大型プロジェクトは町の個性の専用施設を含める） */
+function withProjects<T extends { ids: Tool[] }>(groups: T[], isProjectGroup: (g: T) => boolean, projects: Tool[]): T[] {
+  return groups.map((g) => (isProjectGroup(g) ? { ...g, ids: [...projects, ...g.ids] } : g));
+}
 const PINNED: Tool[] = ["inspect", "bulldoze"];
 
 /** スマホ：画面下のバー（調べる・撤去は常に左に固定、ほかは分類タブで切り替え） */
 export function BuildMenu() {
   const { tool, setTool, advance, advanceMany, undo, canUndo } = useGame();
+  const { state } = useCity();
   const tools = useTools();
+  const groups = withProjects(MOBILE_GROUPS, (g) => g.id === "project", projectsFor(state.profile.trait));
   const current = tools.find((t) => t.id === tool);
-  const [group, setGroup] = useState(() => MOBILE_GROUPS.find((g) => g.ids.includes(tool))?.id ?? "basic");
+  const [group, setGroup] = useState(() => groups.find((g) => g.ids.includes(tool))?.id ?? "basic");
   // 住民の声などから別の分類の建物が選ばれたら、その分類のタブに切り替える
   const [prevTool, setPrevTool] = useState(tool);
   if (prevTool !== tool) {
     setPrevTool(tool);
-    const g = MOBILE_GROUPS.find((x) => x.ids.includes(tool));
+    const g = groups.find((x) => x.ids.includes(tool));
     if (g && g.id !== group) setGroup(g.id);
   }
-  const shown = MOBILE_GROUPS.find((g) => g.id === group) ?? MOBILE_GROUPS[0];
+  const shown = groups.find((g) => g.id === group) ?? groups[0];
   const pinned = tools.filter((t) => PINNED.includes(t.id));
   const list = shown.ids.map((id) => tools.find((t) => t.id === id)).filter((t): t is ToolDef => !!t);
 
@@ -113,7 +120,7 @@ export function BuildMenu() {
   };
 
   return (
-    <div className="fixed inset-x-0 bottom-0 z-40 border-t border-white/70 bg-white/90 pb-[env(safe-area-inset-bottom)] backdrop-blur-md lg:hidden">
+    <div id="mobile-bar" className="fixed inset-x-0 bottom-0 z-40 border-t border-white/70 bg-white/90 pb-[env(safe-area-inset-bottom)] backdrop-blur-md lg:hidden">
       <div className="flex items-start gap-2 px-3 pt-1.5">
         <p className="line-clamp-2 min-w-0 flex-1 text-[11px] font-bold leading-snug text-slate-500">
           <span className="text-slate-800">
@@ -132,7 +139,7 @@ export function BuildMenu() {
         </div>
       </div>
       <div className="mt-1 flex gap-1 px-2" role="tablist" aria-label="建物の種類">
-        {MOBILE_GROUPS.map((g) => (
+        {groups.map((g) => (
           <button
             key={g.id}
             type="button"
@@ -160,14 +167,16 @@ export function BuildMenu() {
 const PALETTE_GROUPS: Array<{ label: string; note?: string; ids: Tool[] }> = [
   { label: "操作", ids: ["inspect", "bulldoze", "reclaim"] },
   { label: "道路", note: "建物は道路に面していないと使えない", ids: ["road", "avenue"] },
-  { label: "住む・働く場所", note: "土地を用意すると、住民や会社が建物を建てて育てる", ids: ["residential", "commercial", "industrial"] },
-  { label: "公共施設", note: "町が建てて維持費を払う。周りの住民が喜ぶ", ids: ["park", "bigPark", "school", "hospital", "fireStation", "busStop", "plaza", "station", "landmark"] },
-  { label: "大型プロジェクト（2×2）", note: "数か月の工事で完成し、街全体が変わる", ids: PROJECTS },
+  { label: "住む・働く場所（民間）", note: "土地を用意すると住民や会社が建てて育てる。維持費なし", ids: ["residential", "commercial", "industrial"] },
+  { label: "町の施設", note: "町のお金で建て、毎月維持費を払う。範囲内の住民が喜ぶ", ids: ["park", "bigPark", "school", "hospital", "fireStation", "busStop", "plaza", "station", "landmark"] },
+  { label: "大型プロジェクト（2×2）", note: "数か月の工事で完成し、街全体が変わる。1つの街に1つずつ", ids: [] },
 ];
 
 export function BuildPalette() {
   const { tool, setTool } = useGame();
+  const { state } = useCity();
   const tools = useTools();
+  const groups = withProjects(PALETTE_GROUPS, (g) => g.label.startsWith("大型"), projectsFor(state.profile.trait));
   const current = tools.find((t) => t.id === tool);
 
   return (
@@ -187,7 +196,7 @@ export function BuildPalette() {
           <p className="mt-0.5 text-[10px] font-bold leading-snug text-slate-500">{current.hint}</p>
         </div>
       )}
-      {PALETTE_GROUPS.map((g) => (
+      {groups.map((g) => (
         <section key={g.label}>
           <div className="mb-0.5 px-0.5">
             <div className="text-[10px] font-black text-slate-500">{g.label}</div>

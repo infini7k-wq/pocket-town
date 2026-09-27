@@ -39,9 +39,27 @@ export const POPULATION = {
 };
 
 /** 商業が支えられる雇用 = base + 人口 × perCapita（× 需要倍率） */
-export const COM_SUPPORT = { base: 20, perCapita: 0.22, plazaBonus: 30, stationBonus: 80, landmarkBonus: 150 };
+export const COM_SUPPORT = { base: 20, perCapita: 0.22, plazaBonus: 60, stationBonus: 80, landmarkBonus: 150 };
 /** 工業が支えられる雇用 = base + 人口 × perCapita（× 需要倍率） */
 export const IND_SUPPORT = { base: 60, perCapita: 0.25 };
+
+// ---------- お店の大きさ ----------
+/** 商業が次のレベルに育つのに必要な「周り4マスに住む人」（index = 次のレベル） */
+export const SHOP_CATCHMENT = { radius: 4, residents: [0, 0, 150, 600, 1500], plazaFactor: 0.5 };
+/** 商業のレベルごとの買い物の範囲（マス） */
+export const SHOP_RADIUS = [0, 3, 3, 4, 5];
+
+// ---------- 建設の需要 ----------
+export const DEMAND = {
+  /** 空き部屋が「転入の何か月分」あれば住宅は足りているとみなすか */
+  vacancyMonths: 4,
+  /** 人口を呼び込むための「仕事の余り」（働き手に対する割合） */
+  jobHeadroom: 0.2,
+  /** メーターの段階（これより大きいと「不足」「少し不足」、これ未満で「空きあり」） */
+  high: 30,
+  some: 10,
+  spare: -20,
+};
 
 // ---------- 満足度 ----------
 export const HAPPINESS = {
@@ -51,7 +69,7 @@ export const HAPPINESS = {
   health: 10,
   fire: 4,
   shopping: 6,
-  plaza: 8,
+  plaza: 5,
   transit: 5,
   landmark: 10,
   /** 環境 60 を基準に 1 ポイントあたり */

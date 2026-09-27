@@ -6,6 +6,8 @@ import {
   SAVE_KEY,
   SCENARIOS,
   TRAITS,
+  TRAIT_PROJECTS,
+  BUILDINGS,
   bestStars,
   exportTransferCode,
   formatDate,
@@ -200,6 +202,9 @@ export function StartScreen() {
                   <div>
                     <div className="text-lg font-black text-slate-800">{trait.name}</div>
                     <div className="text-xs font-bold leading-snug text-slate-500">{trait.description}</div>
+                    <div className="mt-0.5 text-[11px] font-black text-amber-700">
+                      ✨ この町だけの施設：{BUILDINGS[TRAIT_PROJECTS[preview.profile.trait]].emoji[1]} {BUILDINGS[TRAIT_PROJECTS[preview.profile.trait]].name}（町になると建設できる）
+                    </div>
                   </div>
                 </div>
                 <div className="mt-3 grid grid-cols-2 gap-1.5">

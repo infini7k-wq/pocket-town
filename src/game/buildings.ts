@@ -1,7 +1,7 @@
 // 建物の定義。新しい建物はここに追加すれば地図・建設メニュー・シミュレーションに反映される。
 
 import { COM_JOBS, IND_JOBS, RES_CAPACITY } from "./config";
-import type { BuildingType, CoverageKind, ModifierEffects, RankId, ZoneType } from "./types";
+import type { BuildingType, CoverageKind, ModifierEffects, RankId, TraitId, ZoneType } from "./types";
 
 export type BuildingCategory = "road" | "zone" | "service" | "project" | "special";
 
@@ -53,6 +53,12 @@ export interface BuildingDef {
   globalEffects?: ModifierEffects;
   /** 大型プロジェクトの完成後の効果（説明用） */
   impact?: string;
+  /** この個性の町だけで建てられる専用プロジェクト */
+  trait?: TraitId;
+  /** 水辺（海・川）に面していないと建てられない */
+  nearWater?: boolean;
+  /** 地図の端（となり町との境）に面していないと建てられない */
+  mapEdge?: boolean;
 }
 
 const ALL_LEVELS = (n: number) => [0, n, n, n, n];
@@ -104,10 +110,10 @@ export const BUILDINGS: Record<BuildingType, BuildingDef> = {
   commercial: {
     type: "commercial",
     name: "商業",
-    description: "働く場所と税収。人口が少ないとお客さんが来ない",
+    description: "お店と働く場所。周りに住む人が多いほど大きな店に育つ",
     category: "zone",
-    emoji: ["🚧", "🏪", "🏬", "🏙️", "🏦"],
-    levelNames: ["造成中", "商店", "商店街", "オフィスビル", "超高層オフィス"],
+    emoji: ["🚧", "🏪", "🛒", "🏬", "🏙️"],
+    levelNames: ["造成中", "コンビニ", "スーパー", "デパート", "複合ビル（お店＋オフィス）"],
     cost: 80_000,
     upkeep: 0,
     jobs: COM_JOBS,
@@ -135,14 +141,14 @@ export const BUILDINGS: Record<BuildingType, BuildingDef> = {
   park: {
     type: "park",
     name: "公園",
-    description: "周囲の満足度と環境を上げる",
+    description: "安い小さな公園。2マス先までの家の満足度と空気を上げる",
     category: "service",
     emoji: ["", "🌳"],
     cost: 150_000,
     upkeep: 10_000,
     jobs: ALL_LEVELS(1),
     coverage: { kind: "park", radius: 2, strength: 1 },
-    effect: "範囲内の住宅の満足度と、周りの環境（空気のきれいさ）が上がる",
+    effect: "範囲内の住宅の満足度が最大+14、空気が最大+18（端では半分）",
     unlockRank: "village",
     removable: true,
     paintable: false,
@@ -151,14 +157,14 @@ export const BUILDINGS: Record<BuildingType, BuildingDef> = {
   bigPark: {
     type: "bigPark",
     name: "大きな公園",
-    description: "池や芝生のある広い公園。1マスで広い範囲に効く",
+    description: "池や林のある広い公園。4マス先まで、公園より強く効き、騒音もやわらげる",
     category: "service",
     emoji: ["", "🏞️"],
-    cost: 700_000,
+    cost: 500_000,
     upkeep: 35_000,
     jobs: ALL_LEVELS(4),
-    coverage: { kind: "park", radius: 4, strength: 1 },
-    effect: "公園の約3倍の広さで、満足度と空気のきれいさが上がる",
+    coverage: { kind: "park", radius: 4, strength: 1.3 },
+    effect: "満足度が最大+18・空気が最大+23（公園の1.3倍）で、範囲は約3倍。周り2マスの騒音を半分にする",
     unlockRank: "town",
     removable: true,
     paintable: false,
@@ -236,7 +242,7 @@ export const BUILDINGS: Record<BuildingType, BuildingDef> = {
     upkeep: 20_000,
     jobs: ALL_LEVELS(2),
     coverage: { kind: "transit", radius: 3, strength: 0.7 },
-    effect: "範囲内の建物が出す車が減り、渋滞がやわらぐ。満足度も少し上がる",
+    effect: "範囲内の車を最大28%減らし、満足度+3。タワーマンション・複合ビルに育つ条件にもなる",
     unlockRank: "town",
     removable: true,
     paintable: false,
@@ -245,14 +251,14 @@ export const BUILDINGS: Record<BuildingType, BuildingDef> = {
   plaza: {
     type: "plaza",
     name: "広場",
-    description: "にぎわいの中心。満足度と商業を後押し",
+    description: "人が集まる広場。近くのお店が大きな店に育ちやすくなる",
     category: "service",
     emoji: ["", "⛲"],
     cost: 400_000,
     upkeep: 15_000,
     jobs: ALL_LEVELS(2),
     coverage: { kind: "plaza", radius: 3, strength: 1 },
-    effect: "満足度が上がり、近くのお店が育ちやすくなる。街全体のお店の客も増える",
+    effect: "範囲内のお店は、周りの住民が半分でもスーパー・デパートに育つ。満足度も少し上がり（+5）、街全体のお客も+60人分",
     unlockRank: "town",
     removable: true,
     paintable: false,
@@ -260,15 +266,15 @@ export const BUILDINGS: Record<BuildingType, BuildingDef> = {
   },
   station: {
     type: "station",
-    name: "駅",
-    description: "広い範囲の交通量を大きく減らす",
+    name: "バスターミナル",
+    description: "路線バスが集まる大きなターミナル。広い範囲の車を減らす",
     category: "service",
-    emoji: ["", "🚉"],
+    emoji: ["", "🚌"],
     cost: 2_500_000,
     upkeep: 150_000,
     jobs: ALL_LEVELS(20),
     coverage: { kind: "transit", radius: 5, strength: 1 },
-    effect: "広い範囲で車が大きく減り、渋滞がやわらぐ。街全体のお店の客も増える",
+    effect: "範囲内の車を最大40%減らし（バス停は28%）、満足度+5。街全体のお客も+80人分",
     unlockRank: "city",
     removable: true,
     paintable: false,
@@ -284,7 +290,7 @@ export const BUILDINGS: Record<BuildingType, BuildingDef> = {
     upkeep: 200_000,
     jobs: ALL_LEVELS(30),
     coverage: { kind: "landmark", radius: 7, strength: 1 },
-    effect: "とても広い範囲の満足度が大きく上がる。街全体のお店の客も増える",
+    effect: "半径7マスの満足度が最大+10。街全体のお客も+150人分",
     unlockRank: "metropolis",
     removable: true,
     paintable: false,
@@ -336,14 +342,14 @@ export const BUILDINGS: Record<BuildingType, BuildingDef> = {
   bulletTrain: {
     type: "bulletTrain",
     name: "新幹線駅",
-    description: "大都市と直結。通勤客と観光客が一気に増える",
+    description: "大都市と直結。線路がとなり町へ続くよう、地図の端に建てる",
     category: "project",
     emoji: ["🏗️", "🚄"],
     cost: 12_000_000,
     upkeep: 180_000,
     jobs: ALL_LEVELS(40),
     coverage: { kind: "transit", radius: 7, strength: 1 },
-    effect: "広い範囲で車が大きく減る。満足度も少し上がる",
+    effect: "バスターミナルと同じ効き目（車−40%・満足度+5）が建物の端から7マスに届く",
     impact: "引っ越してくる人が大きく増える・お店の客 +300人分・工場の注文 +150人分・半径7マスの渋滞がやわらぐ",
     unlockRank: "city",
     removable: true,
@@ -352,6 +358,7 @@ export const BUILDINGS: Record<BuildingType, BuildingDef> = {
     size: 2,
     buildMonths: 10,
     trips: 30,
+    mapEdge: true,
     globalEffects: { resAppeal: 0.08, comSupport: 300, indSupport: 150 },
   },
   themePark: {
@@ -397,6 +404,96 @@ export const BUILDINGS: Record<BuildingType, BuildingDef> = {
     pollution: 18,
     globalEffects: { indSupport: 700, comSupport: 400, resAppeal: 0.04 },
   },
+  // ---------- 町の個性ごとの専用プロジェクト（1つの街に1つ） ----------
+  forestPark: {
+    type: "forestPark",
+    name: "森林公園",
+    description: "郊外住宅地だけの専用施設。森と遊歩道の大きな公園",
+    category: "project",
+    emoji: ["🏗️", "🌲"],
+    cost: 5_000_000,
+    upkeep: 100_000,
+    jobs: ALL_LEVELS(20),
+    coverage: { kind: "park", radius: 6, strength: 1.2 },
+    effect: "建物の端から6マスが公園の範囲になり、ふつうの公園より強く効く",
+    impact: "半径6マスが強い公園の範囲に・引っ越してくる人が増える・街全体の空気+4・公園の効果+20%",
+    unlockRank: "town",
+    removable: true,
+    paintable: false,
+    color: "#1b5e20",
+    size: 2,
+    buildMonths: 6,
+    trips: 20,
+    trait: "suburban",
+    globalEffects: { resAppeal: 0.05, env: 4, parkWeight: 0.2 },
+  },
+  kombinat: {
+    type: "kombinat",
+    name: "産業コンビナート",
+    description: "工業の町だけの専用施設。巨大な工場群で雇用と税収が大きく増える",
+    category: "project",
+    emoji: ["🏗️", "🏗️"],
+    cost: 7_000_000,
+    upkeep: 150_000,
+    jobs: ALL_LEVELS(200),
+    impact: "雇用200人・工場の注文 +400人分・税収+5%／周り3マスの空気が悪くなる",
+    unlockRank: "town",
+    removable: true,
+    paintable: false,
+    color: "#8d6e63",
+    size: 2,
+    buildMonths: 8,
+    trips: 80,
+    pollution: 10,
+    trait: "industrial",
+    globalEffects: { indSupport: 400, taxIncome: 0.05 },
+  },
+  marina: {
+    type: "marina",
+    name: "マリーナ",
+    description: "海沿いの町だけの専用施設。ヨットが並ぶ港。水辺に面して建てる",
+    category: "project",
+    emoji: ["🏗️", "⛵"],
+    cost: 6_000_000,
+    upkeep: 120_000,
+    jobs: ALL_LEVELS(50),
+    coverage: { kind: "landmark", radius: 5, strength: 0.6 },
+    effect: "範囲内の住宅の満足度が上がる（海辺の人気スポット）",
+    impact: "入場料 月¥40万・お店の客 +250人分・引っ越してくる人が増える・周り5マスの満足度アップ",
+    unlockRank: "town",
+    removable: true,
+    paintable: false,
+    color: "#0288d1",
+    size: 2,
+    buildMonths: 6,
+    revenue: 400_000,
+    trips: 40,
+    trait: "coastal",
+    nearWater: true,
+    globalEffects: { comSupport: 250, resAppeal: 0.03 },
+  },
+  arcade: {
+    type: "arcade",
+    name: "アーケード商店街",
+    description: "商店街の町だけの専用施設。屋根つきの大きな商店街",
+    category: "project",
+    emoji: ["🏗️", "🏮"],
+    cost: 5_000_000,
+    upkeep: 100_000,
+    jobs: ALL_LEVELS(80),
+    coverage: { kind: "shopping", radius: 5, strength: 1.2 },
+    effect: "建物の端から5マスで買い物がとても便利になる",
+    impact: "雇用80人・お店の客 +300人分・周り5マスの買い物がとても便利に",
+    unlockRank: "town",
+    removable: true,
+    paintable: false,
+    color: "#e53935",
+    size: 2,
+    buildMonths: 6,
+    trips: 50,
+    trait: "merchant",
+    globalEffects: { comSupport: 300 },
+  },
   annex: {
     type: "annex",
     name: "大型施設の敷地",
@@ -416,6 +513,19 @@ export const BUILDINGS: Record<BuildingType, BuildingDef> = {
 /** 大型プロジェクト（2×2） */
 export const PROJECTS: BuildingType[] = ["stadium", "university", "bulletTrain", "themePark", "airport"];
 
+/** 町の個性ごとの専用プロジェクト */
+export const TRAIT_PROJECTS: Record<TraitId, BuildingType> = {
+  suburban: "forestPark",
+  industrial: "kombinat",
+  coastal: "marina",
+  merchant: "arcade",
+};
+
+/** その町で建てられる大型プロジェクト（専用プロジェクトを先頭に） */
+export function projectsFor(trait: TraitId): BuildingType[] {
+  return [TRAIT_PROJECTS[trait], ...PROJECTS];
+}
+
 export function isProject(type: BuildingType | undefined): boolean {
   return !!type && BUILDINGS[type].category === "project";
 }
@@ -423,6 +533,7 @@ export function isProject(type: BuildingType | undefined): boolean {
 /** 建設メニューの並び順 */
 export const BUILD_ORDER: BuildingType[] = [
   "road",
+  "avenue",
   "residential",
   "commercial",
   "industrial",
@@ -431,7 +542,6 @@ export const BUILD_ORDER: BuildingType[] = [
   "school",
   "hospital",
   "fireStation",
-  "avenue",
   "busStop",
   "plaza",
   "station",

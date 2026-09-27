@@ -3,6 +3,7 @@
 
 import type { CityAnalysis } from "./analysis";
 import { BUILDINGS } from "./buildings";
+import { DEMAND } from "./config";
 import { currentMission } from "./goals";
 import { isBuildingUnlocked } from "./progression";
 import type { BuildingType, GameState, ZoneType } from "./types";
@@ -79,7 +80,7 @@ export function nextAdvice(state: GameState, a: CityAnalysis): Advice | null {
   const zones: ZoneType[] = ["residential", "commercial", "industrial"];
   let top = zones.reduce((best, z) => (a.demand[z] > a.demand[best] ? z : best), zones[0]);
   if (top !== "residential" && a.employment.jobs > 20 && a.employment.jobFillRate < 0.9) top = "residential";
-  if (a.demand[top] >= 25) {
+  if (a.demand[top] > DEMAND.high) {
     if (buildableLots(state, a) === 0) {
       return { id: "land", emoji: "🛣️", title: "道路を延ばそう", detail: `${BUILDINGS[top].name}を建てたいのに、道路に面した空き地がありません`, tool: "road" };
     }

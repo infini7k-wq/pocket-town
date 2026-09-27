@@ -9,6 +9,8 @@ import type { TrafficResult } from "./traffic";
 import type { GameState } from "./types";
 
 const POLLUTION_FALLOFF = [1, 1, 0.6, 0.3];
+/** 大きな公園の近くの騒音の倍率 */
+const NOISE_BUFFER = 0.5;
 
 export function computeEnvironment(state: GameState, coverage: CoverageMap, traffic: TrafficResult, fx: Effects): number[] {
   const { tiles, width, height } = state;
@@ -73,6 +75,14 @@ export function computeNoise(state: GameState, fx: Effects): number[] {
     forEachInRadius(i, 2, width, height, (j, d) => {
       if (j === i) return;
       noise[j] += d <= 1.5 ? base : base / 2;
+    });
+  });
+  // 大きな公園の林が、周り2マスの騒音をやわらげる
+  tiles.forEach((t, i) => {
+    const b = t.building;
+    if (b?.type !== "bigPark" && b?.type !== "forestPark") return;
+    forEachInRange(i, BUILDINGS[b.type].size ?? 1, 2, width, height, (j) => {
+      noise[j] *= NOISE_BUFFER;
     });
   });
   return noise.map((v) => v * (1 - fx.noiseShield));

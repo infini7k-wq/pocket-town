@@ -45,11 +45,11 @@ import {
 } from "@/game";
 
 export type Tool = BuildingType | "inspect" | "bulldoze" | "reclaim";
-export type Overlay = "none" | "traffic" | "env" | "happiness" | "park" | "education" | "health" | "fire" | "transit" | "shopping";
+export type Overlay = "none" | "traffic" | "env" | "happiness" | "park" | "education" | "health" | "fire" | "transit" | "shopping" | "plaza";
 export type PanelTab = "voices" | "city" | "finance" | "goals";
 
 /** 施設の効果範囲を表す表示モード */
-export const RANGE_OVERLAYS: Overlay[] = ["park", "education", "health", "fire", "transit", "shopping"];
+export const RANGE_OVERLAYS: Overlay[] = ["park", "education", "health", "fire", "transit", "shopping", "plaza"];
 
 export interface Floater {
   id: number;
@@ -86,6 +86,10 @@ interface GameContextValue {
   setOverlay: (o: Overlay) => void;
   panelTab: PanelTab;
   setPanelTab: (t: PanelTab) => void;
+  /** タブを開き、スマホでは画面をそのタブまでスクロールする */
+  openPanel: (t: PanelTab) => void;
+  /** 地図の表示モードを変え、スマホでは地図までスクロールする */
+  showOverlay: (o: Overlay) => void;
   /** マスに対して現在のツールを使う（painting = ドラッグ中の連続設置） */
   applyToolAt: (i: number, painting?: boolean) => void;
   endStroke: () => void;
@@ -218,7 +222,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     // 公共施設を選んだら効果範囲を自動表示
     const cov = t !== "inspect" && t !== "bulldoze" && t !== "reclaim" ? BUILDINGS[t].coverage?.kind : undefined;
     setOverlay((o) => {
-      if (cov && cov !== "plaza" && cov !== "landmark") return cov as Overlay;
+      if (cov && cov !== "landmark") return cov as Overlay;
       return RANGE_OVERLAYS.includes(o) ? "none" : o;
     });
   }, []);
@@ -226,17 +230,29 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   const pickTool = useCallback(
     (t: Tool) => {
       setTool(t);
-      if (typeof window !== "undefined" && window.innerWidth < 1024) {
-        document.getElementById("city-map")?.scrollIntoView({ behavior: "smooth", block: "start" });
-      }
+      scrollToOnMobile("city-map");
     },
     [setTool],
   );
 
-  const focusTile = useCallback((i: number) => {
-    setToolState("inspect");
-    setSelected(i);
-    setFlash({ tile: i, key: Date.now() });
+  // 地図上の場所を示す（スマホでのスクロールは CityMap が flash を見て行う）
+  const focusTile = useCallback(
+    (i: number) => {
+      setTool("inspect");
+      setSelected(i);
+      setFlash({ tile: i, key: Date.now() });
+    },
+    [setTool],
+  );
+
+  const openPanel = useCallback((t: PanelTab) => {
+    setPanelTab(t);
+    scrollToOnMobile("side-panel-tabs");
+  }, []);
+
+  const showOverlay = useCallback((o: Overlay) => {
+    setOverlay(o);
+    scrollToOnMobile("city-map");
   }, []);
 
   const apply = useCallback(
@@ -529,6 +545,8 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       setOverlay,
       panelTab,
       setPanelTab,
+      openPanel,
+      showOverlay,
       applyToolAt,
       endStroke,
       runAction,
@@ -557,10 +575,17 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       helpOpen,
       setHelpOpen,
     }),
-    [state, analysis, tool, setTool, pickTool, selected, flash, focusTile, overlay, panelTab, applyToolAt, endStroke, runAction, advance, advanceMany, undo, undoStack.length, changeTax, takeLoan, repayLoan, chooseEventOption, newGame, recordToHall, scenarioResult, continueGame, quitToTitle, floaters, toasts, toast, banner, rankUp, eraShift, helpOpen],
+    [state, analysis, tool, setTool, pickTool, selected, flash, focusTile, overlay, panelTab, openPanel, showOverlay, applyToolAt, endStroke, runAction, advance, advanceMany, undo, undoStack.length, changeTax, takeLoan, repayLoan, chooseEventOption, newGame, recordToHall, scenarioResult, continueGame, quitToTitle, floaters, toasts, toast, banner, rankUp, eraShift, helpOpen],
   );
 
   return <GameContext.Provider value={value}>{children}</GameContext.Provider>;
+}
+
+/** スマホ（1列表示）のときだけ、要素まで画面をスクロールする */
+function scrollToOnMobile(id: string) {
+  if (typeof window === "undefined" || window.innerWidth >= 1024) return;
+  // タブの切り替えが画面に反映されてからスクロールする
+  window.setTimeout(() => document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" }), 30);
 }
 
 const OUTFLOW_TEXT: Record<OutflowReason, string> = {

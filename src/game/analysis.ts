@@ -2,7 +2,7 @@
 // UI とシミュレーションの両方がこの結果を使う。状態は変更しない。
 
 import { BUILDINGS, isRoad } from "./buildings";
-import { HAPPINESS } from "./config";
+import { COM_JOBS, DEMAND, HAPPINESS, IND_JOBS, POPULATION, RES_CAPACITY, WORKFORCE_RATIO } from "./config";
 import { computeCoverage, type CoverageMap } from "./coverage";
 import { computeBudget } from "./economy";
 import { computeEmployment, type Employment } from "./employment";
@@ -39,25 +39,55 @@ export interface CityAnalysis {
 
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 
+/**
+ * 建設の需要（-100〜100）。0 付近が「足りている」。
+ * - 住宅：空き部屋が「何か月分の転入」をまかなえるか（空きが4か月分あれば 0）
+ * - 商業・工業：人口が支えられる雇用を、働き手の余力で割り引いた「目標」と比べる
+ * 造成中の区画は Lv1 として「予約済み」に数えるので、置いた直後からメーターが下がる。
+ */
 export function computeDemand(state: GameState, emp: Employment, happiness: number, fx: Effects): Record<ZoneType, number> {
   const u = emp.unemployment;
-  const openJobs = (emp.jobs - emp.filled) / Math.max(emp.workers, 50);
-  const shortage = Math.max(0, 0.9 - emp.jobFillRate) * 150;
+  let pendingRes = 0;
+  let pendingCom = 0;
+  let pendingInd = 0;
+  for (const t of state.tiles) {
+    const b = t.building;
+    if (!b || b.level !== 0) continue;
+    if (b.type === "residential") pendingRes += RES_CAPACITY[1];
+    else if (b.type === "commercial") pendingCom += COM_JOBS[1];
+    else if (b.type === "industrial") pendingInd += IND_JOBS[1];
+  }
+  const pop = emp.population;
+  const workers = emp.workers;
+  const jobRoom = (emp.jobs + pendingCom + pendingInd - workers) / WORKFORCE_RATIO;
+  const mood = clamp((happiness - 35) / 45, 0, 1.2);
+  const inflow = Math.max(0, jobRoom * POPULATION.jobInflowShare + (pop * POPULATION.baselineInflow + 8) * mood);
+  const vacant = Math.max(0, emp.housingCapacity + pendingRes - pop);
+  const monthsOfVacancy = vacant / Math.max(1, inflow * DEMAND.vacancyMonths);
   const residential =
-    openJobs * 120 +
-    (happiness - 55) * 1.2 -
-    emp.vacancyRate * 150 +
-    10 +
+    60 * (1 - monthsOfVacancy) +
     (state.profile.resAppeal + fx.resAppeal) * 60 -
     Math.max(0, u - 0.08) * 150 -
     (state.taxes.residential - HAPPINESS.taxNeutral) * 3;
-  const commercial = ((emp.comSupport - emp.comJobs) / Math.max(emp.comSupport, 30)) * 120 + Math.max(0, u - 0.05) * 100 - shortage;
-  const industrial = ((emp.indSupport - emp.indJobs) / Math.max(emp.indSupport, 30)) * 120 + Math.max(0, u - 0.05) * 120 - shortage;
+  // 働き手が足りない分は、お店や工場を建てても埋まらないので目標から割り引く
+  const room = clamp(((1 + DEMAND.jobHeadroom) * workers - emp.serviceJobs) / Math.max(1, emp.comSupport + emp.indSupport), 0.4, 1);
+  const targetCom = room * emp.comSupport;
+  const targetInd = room * emp.indSupport;
+  const commercial = ((targetCom - emp.comJobs - pendingCom) / Math.max(targetCom, 30)) * 120 + Math.max(0, u - 0.05) * 100;
+  const industrial = ((targetInd - emp.indJobs - pendingInd) / Math.max(targetInd, 30)) * 120 + Math.max(0, u - 0.05) * 120;
   return {
     residential: Math.round(clamp(residential, -100, 100)),
     commercial: Math.round(clamp(commercial, -100, 100)),
     industrial: Math.round(clamp(industrial, -100, 100)),
   };
+}
+
+/** 需要メーターの表示段階（UI・おすすめで共通に使う） */
+export function demandLevel(v: number): { label: string; tone: "high" | "some" | "ok" | "spare" } {
+  if (v > DEMAND.high) return { label: "不足", tone: "high" };
+  if (v > DEMAND.some) return { label: "少し不足", tone: "some" };
+  if (v >= DEMAND.spare) return { label: "足りている", tone: "ok" };
+  return { label: "空きあり", tone: "spare" };
 }
 
 /** 完成して道路につながっている大型プロジェクトの、街全体への効果 */

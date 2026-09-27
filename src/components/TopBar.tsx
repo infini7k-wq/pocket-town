@@ -37,7 +37,7 @@ const level = (v: number, good: number, warn: number): Status => (v >= good ? "g
 
 export function TopBar() {
   const { state, analysis: a } = useCity();
-  const { advance, advanceMany, undo, canUndo, setPanelTab, setOverlay, setHelpOpen } = useGame();
+  const { advance, advanceMany, undo, canUndo, openPanel, showOverlay, setHelpOpen } = useGame();
   const rank = getRank(state.rank);
   const next = nextRank(state.rank);
   const progress = rankProgress(state);
@@ -51,10 +51,12 @@ export function TopBar() {
   useEffect(() => {
     const el = headerRef.current;
     if (!el) return;
-    const ro = new ResizeObserver(() => {
+    const update = () => {
       document.documentElement.style.setProperty("--header-h", `${el.offsetHeight}px`);
       window.dispatchEvent(new Event("header-resize"));
-    });
+    };
+    update();
+    const ro = new ResizeObserver(update);
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
@@ -105,9 +107,9 @@ export function TopBar() {
             label="人口"
             value={formatNumber(a.population)}
             sub={report ? <span className={popDelta >= 0 ? "text-emerald-600" : "text-rose-600"}>{formatNumber(popDelta, { sign: true })}</span> : undefined}
-            onClick={() => setPanelTab("city")}
+            onClick={() => openPanel("city")}
           />
-          <Kpi icon="💴" label="資金" value={formatYen(state.money, { compact: true })} status={state.money < 0 ? "bad" : "neutral"} sub={state.loan > 0 ? <span className="text-slate-500">借入 {formatYen(state.loan, { compact: true })}</span> : undefined} onClick={() => setPanelTab("finance")} />
+          <Kpi icon="💴" label="資金" value={formatYen(state.money, { compact: true })} status={state.money < 0 ? "bad" : "neutral"} sub={state.loan > 0 ? <span className="text-slate-500">借入 {formatYen(state.loan, { compact: true })}</span> : undefined} onClick={() => openPanel("finance")} />
           <Kpi
             icon="📈"
             label="月の収支"
@@ -119,12 +121,12 @@ export function TopBar() {
                 <span className="text-rose-500">-{formatYen(a.budget.expense.total, { compact: true }).replace("¥", "")}</span>
               </span>
             }
-            onClick={() => setPanelTab("finance")}
+            onClick={() => openPanel("finance")}
           />
-          <Kpi icon="😊" label="満足度" value={`${a.cityHappiness}%`} status={level(a.cityHappiness, 70, 50)} onClick={() => setOverlay("happiness")} />
-          <Kpi icon="💼" label="雇用率" value={`${Math.round(emp.employmentRate * 100)}%`} status={level(emp.employmentRate * 100, 93, 85)} sub={emp.jobFillRate < 0.9 ? <span className="text-amber-600">人手不足</span> : undefined} onClick={() => setPanelTab("city")} />
-          <Kpi icon="🚗" label="交通混雑" value={`${a.congestion}%`} status={a.congestion < 15 ? "good" : a.congestion < 35 ? "warn" : "bad"} onClick={() => setOverlay("traffic")} />
-          <Kpi icon="🌿" label="環境" value={`${a.cityEnvironment}`} status={level(a.cityEnvironment, 65, 45)} onClick={() => setOverlay("env")} />
+          <Kpi icon="😊" label="満足度" value={`${a.cityHappiness}%`} status={level(a.cityHappiness, 70, 50)} onClick={() => showOverlay("happiness")} />
+          <Kpi icon="💼" label="雇用率" value={`${Math.round(emp.employmentRate * 100)}%`} status={level(emp.employmentRate * 100, 93, 85)} sub={emp.jobFillRate < 0.9 ? <span className="text-amber-600">人手不足</span> : undefined} onClick={() => openPanel("city")} />
+          <Kpi icon="🚗" label="交通混雑" value={`${a.congestion}%`} status={a.congestion < 15 ? "good" : a.congestion < 35 ? "warn" : "bad"} onClick={() => showOverlay("traffic")} />
+          <Kpi icon="🌿" label="環境" value={`${a.cityEnvironment}`} status={level(a.cityEnvironment, 65, 45)} onClick={() => showOverlay("env")} />
         </div>
 
         {/* PC：日付と翌月ボタン */}
@@ -178,12 +180,12 @@ export function NextMonthButton({ onClick, compact }: { onClick: () => void; com
 /** いまの時代と、予告された次の時代 */
 function EraLine() {
   const { state } = useCity();
-  const { setPanelTab } = useGame();
+  const { openPanel } = useGame();
   const era = getEra(state.era.id);
   const left = monthsToNextEra(state);
   const next = state.era.next ? getEra(state.era.next.id) : null;
   return (
-    <button type="button" onClick={() => setPanelTab("city")} className="mt-0.5 flex max-w-full items-center gap-1 truncate text-left text-[10px] font-bold text-violet-700">
+    <button type="button" onClick={() => openPanel("city")} className="mt-0.5 flex max-w-full items-center gap-1 truncate text-left text-[10px] font-bold text-violet-700">
       <span className="truncate">
         {era.emoji} {era.name}の時代
       </span>

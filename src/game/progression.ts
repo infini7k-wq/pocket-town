@@ -1,8 +1,8 @@
 // 街のランクとアンロック。
 
-import { BUILD_ORDER, BUILDINGS } from "./buildings";
+import { BUILD_ORDER, BUILDINGS, TRAIT_PROJECTS } from "./buildings";
 import { RANKS, type RankDef } from "./config";
-import type { BuildingType, RankId } from "./types";
+import type { BuildingType, RankId, TraitId } from "./types";
 
 export function getRank(id: RankId): RankDef {
   return RANKS.find((r) => r.id === id) ?? RANKS[0];
@@ -27,15 +27,16 @@ export function isBuildingUnlocked(type: BuildingType, rank: RankId): boolean {
 }
 
 /** そのランクで新しく解禁される内容（ランクアップ演出用） */
-export function unlocksForRank(id: RankId): string[] {
+export function unlocksForRank(id: RankId, trait?: TraitId): string[] {
   const rank = getRank(id);
   const prev = RANKS[rankIndex(id) - 1];
-  const out: string[] = BUILD_ORDER.filter((t) => BUILDINGS[t].unlockRank === id).map((t) => `${BUILDINGS[t].emoji[1]} ${BUILDINGS[t].name}`);
+  const types = trait ? [...BUILD_ORDER, TRAIT_PROJECTS[trait]] : BUILD_ORDER;
+  const out: string[] = types.filter((t) => BUILDINGS[t].unlockRank === id).map((t) => `${BUILDINGS[t].emoji[1]} ${BUILDINGS[t].name}${BUILDINGS[t].trait ? "（この町だけの専用施設）" : ""}`);
   if (prev && rank.maxLevel > prev.maxLevel) {
     out.push(
       rank.maxLevel === 3
-        ? "⬆️ 3段目の建物（🏢 マンション・🏙️ オフィスビル・🏭 工業団地）"
-        : "⬆️ 4段目の超高層（🌇 タワーマンション・🏦 超高層オフィス・🤖 ハイテク工業団地）。バス停・駅や学校の近くで育つ",
+        ? "⬆️ 3段目の建物（🏢 マンション・🏬 デパート・🏭 工業団地）"
+        : "⬆️ 4段目の超高層（🌇 タワーマンション・🏙️ 複合ビル・🤖 ハイテク工業団地）。バス停・バスターミナルや学校の近くで育つ",
     );
   }
   if (id === "metropolis") out.push("🏝️ 埋め立て（海や川を陸地にできる）");
