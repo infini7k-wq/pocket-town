@@ -32,6 +32,7 @@ import {
   repay,
   resolveEvent,
   saveGame,
+  setActiveSlot,
   setTax,
   type ActionResult,
   type BuildingType,
@@ -105,13 +106,16 @@ interface GameContextValue {
   takeLoan: () => void;
   repayLoan: () => void;
   chooseEventOption: (choiceId: string) => void;
-  newGame: (name: string, seed: number, scenario?: string) => void;
+  /** 新しい町を始める（slot = 保存する枠 1〜3） */
+  newGame: (name: string, seed: number, scenario: string | undefined, slot: number) => void;
+  /** いま遊んでいるセーブの枠 */
+  slot: number;
   /** いまの街を殿堂に記録する */
   recordToHall: () => void;
   /** チャレンジの結果（ダイアログ表示用） */
   scenarioResult: ScenarioResult | null;
   closeScenarioResult: () => void;
-  continueGame: () => boolean;
+  continueGame: (slot: number) => boolean;
   /** タイトルへ戻る（clear = セーブデータも消す） */
   quitToTitle: (clear?: boolean) => void;
   floaters: Floater[];
@@ -158,6 +162,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   const [eraShift, setEraShift] = useState<string | null>(null);
   const [scenarioResult, setScenarioResult] = useState<ScenarioResult | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [slot, setSlot] = useState(1);
   // 取り消し用：今月の操作の前の状態（月を進めるとリセット）
   const [undoStack, setUndoStack] = useState<GameState[]>([]);
   const strokeSnapshot = useRef(false);
@@ -180,13 +185,13 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   // 自動保存（失敗したら一度だけ知らせる。プライベートブラウズや容量不足など）
   useEffect(() => {
     if (!state) return;
-    const ok = saveGame(state);
+    const ok = saveGame(state, slot);
     if (!ok && !saveWarned.current) {
       saveWarned.current = true;
       toast("⚠️ 自動保存できませんでした。プライベートブラウズでは保存されません", "bad");
     }
     if (ok) saveWarned.current = false;
-  }, [state, toast]);
+  }, [state, slot, toast]);
 
   // ブラウザにデータを消さないよう頼む（iPhone の Safari などで長期間遊ぶため）
   useEffect(() => {
@@ -493,7 +498,9 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   );
 
   const newGame = useCallback(
-    (name: string, seed: number, scenario?: string) => {
+    (name: string, seed: number, scenario: string | undefined, target: number) => {
+      setSlot(target);
+      setActiveSlot(target);
       commit(createNewGame(name, seed, { scenario }));
       setUndoStack([]);
       setScenarioResult(null);
@@ -506,9 +513,11 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     [commit],
   );
 
-  const continueGame = useCallback(() => {
-    const saved = loadGame();
+  const continueGame = useCallback((target: number) => {
+    const saved = loadGame(target);
     if (!saved) return false;
+    setSlot(target);
+    setActiveSlot(target);
     commit(saved);
     setUndoStack([]);
     setToolState("inspect");
@@ -524,11 +533,11 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   }, [toast]);
 
   const quitToTitle = useCallback((clear = false) => {
-    if (clear) clearSave();
+    if (clear) clearSave(slot);
     commit(null);
     setRankUp(null);
     setBanner(null);
-  }, [commit]);
+  }, [commit, slot]);
 
   const value = useMemo<GameContextValue>(
     () => ({
@@ -559,6 +568,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       repayLoan,
       chooseEventOption,
       newGame,
+      slot,
       recordToHall,
       scenarioResult,
       closeScenarioResult: () => setScenarioResult(null),
@@ -575,7 +585,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       helpOpen,
       setHelpOpen,
     }),
-    [state, analysis, tool, setTool, pickTool, selected, flash, focusTile, overlay, panelTab, openPanel, showOverlay, applyToolAt, endStroke, runAction, advance, advanceMany, undo, undoStack.length, changeTax, takeLoan, repayLoan, chooseEventOption, newGame, recordToHall, scenarioResult, continueGame, quitToTitle, floaters, toasts, toast, banner, rankUp, eraShift, helpOpen],
+    [state, analysis, tool, setTool, pickTool, selected, flash, focusTile, overlay, panelTab, openPanel, showOverlay, applyToolAt, endStroke, runAction, advance, advanceMany, undo, undoStack.length, changeTax, takeLoan, repayLoan, chooseEventOption, newGame, slot, recordToHall, scenarioResult, continueGame, quitToTitle, floaters, toasts, toast, banner, rankUp, eraShift, helpOpen],
   );
 
   return <GameContext.Provider value={value}>{children}</GameContext.Provider>;

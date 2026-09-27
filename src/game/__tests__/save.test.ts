@@ -23,6 +23,36 @@ describe("セーブ・ロード", () => {
   });
   afterEach(() => vi.unstubAllGlobals());
 
+  it("セーブの枠は3つ。枠1は以前からのキーで、枠ごとに別々に保存・削除できる", async () => {
+    const { listSlots, setActiveSlot, getActiveSlot, slotKey } = await import("../save");
+    const a = createNewGame("枠1町", 1);
+    const b = createNewGame("枠3町", 3);
+    saveGame(a, 1);
+    saveGame(b, 3);
+    expect(slotKey(1)).toBe(SAVE_KEY);
+    expect(listSlots().map((x) => x.save?.townName ?? null)).toEqual(["枠1町", null, "枠3町"]);
+    setActiveSlot(3);
+    expect(getActiveSlot()).toBe(3);
+    expect(loadGame()?.townName).toBe("枠3町");
+    clearSave(3);
+    expect(loadGame(3)).toBeNull();
+    expect(loadGame(1)?.townName).toBe("枠1町");
+  });
+
+  it("引っ越しデータは3つの枠をまとめて移し、同じ番号の枠に入る", async () => {
+    const { exportTransferCode, parseTransferCode, importTransfer, transferTargets } = await import("../save");
+    const a = createNewGame("A町", 1);
+    const c = createNewGame("C町", 2);
+    const code = await exportTransferCode({ save: a, saves: [a, null, c], hall: [] });
+    vi.stubGlobal("window", { localStorage: new MemoryStorage() });
+    const bundle = (await parseTransferCode(code))!;
+    expect(transferTargets(bundle)).toEqual([1, 3]);
+    importTransfer(bundle);
+    expect(loadGame(1)?.townName).toBe("A町");
+    expect(loadGame(2)).toBeNull();
+    expect(loadGame(3)?.townName).toBe("C町");
+  });
+
   it("保存した状態をそのまま読み込める", () => {
     let s = createNewGame("セーブ町", 7);
     s = advanceMonth(s)!.state;

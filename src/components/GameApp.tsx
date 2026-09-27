@@ -78,7 +78,7 @@ function useShortcuts() {
 }
 
 function GameScreen() {
-  const { selected, select, quitToTitle, setHelpOpen } = useGame();
+  const { selected, select, quitToTitle, setHelpOpen, slot } = useGame();
   useShortcuts();
   return (
     <div className="min-h-dvh pb-44 lg:pb-8">
@@ -104,7 +104,7 @@ function GameScreen() {
               ？ 遊び方
             </button>
             <button type="button" onClick={() => quitToTitle(false)} className="hover:text-slate-600">
-              🏠 タイトルへ（自動保存済み）
+              🏠 タイトルへ（枠{slot}に自動保存済み）
             </button>
           </div>
         </aside>

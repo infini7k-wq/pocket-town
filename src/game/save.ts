@@ -123,43 +123,88 @@ export function parseSave(raw: string | null): GameState | null {
   }
 }
 
-/** 読めないセーブデータ（未来のバージョンなど）を上書きする前に退避しておく場所 */
-export const BACKUP_KEY = "pocket-town/save-backup";
-let checkedExisting = false;
+// ---------------- セーブの枠（3つまで） ----------------
 
-/** 保存済みのデータが読めない場合、上書きで消えないよう別の場所へ退避する（1セッションに1回） */
-function backupUnreadable(st: Storage) {
-  if (checkedExisting) return;
-  checkedExisting = true;
-  const raw = st.getItem(SAVE_KEY);
-  if (raw && !parseSave(raw)) st.setItem(BACKUP_KEY, raw);
+/** セーブの枠の数 */
+export const SAVE_SLOTS = 3;
+/** いま遊んでいる枠を覚えておくキー */
+export const ACTIVE_SLOT_KEY = "pocket-town/active-slot";
+
+/** 枠ごとの保存キー。枠1は以前からのキーのまま（今までのセーブがそのまま枠1になる） */
+export function slotKey(slot: number): string {
+  return slot <= 1 ? SAVE_KEY : `${SAVE_KEY}-${slot}`;
 }
 
-export function saveGame(state: GameState): boolean {
+function clampSlot(slot: number): number {
+  return Math.max(1, Math.min(SAVE_SLOTS, Math.round(slot) || 1));
+}
+
+export function getActiveSlot(): number {
+  return clampSlot(Number(storage()?.getItem(ACTIVE_SLOT_KEY) ?? 1));
+}
+
+export function setActiveSlot(slot: number): void {
+  try {
+    storage()?.setItem(ACTIVE_SLOT_KEY, String(clampSlot(slot)));
+  } catch {
+    // ignore
+  }
+}
+
+export interface SlotInfo {
+  slot: number;
+  save: GameState | null;
+  /** データはあるが読めない（新しいバージョンで保存された・壊れている） */
+  unreadable: boolean;
+}
+
+/** すべての枠の中身 */
+export function listSlots(): SlotInfo[] {
+  const st = storage();
+  return Array.from({ length: SAVE_SLOTS }, (_, k) => {
+    const raw = st?.getItem(slotKey(k + 1)) ?? null;
+    const save = parseSave(raw);
+    return { slot: k + 1, save, unreadable: !!raw && !save };
+  });
+}
+
+/** 読めないセーブデータ（未来のバージョンなど）を上書きする前に退避しておく場所 */
+export const BACKUP_KEY = "pocket-town/save-backup";
+const checkedSlots = new Set<number>();
+
+/** 保存済みのデータが読めない場合、上書きで消えないよう別の場所へ退避する（枠ごとに1セッション1回） */
+function backupUnreadable(st: Storage, slot: number) {
+  if (checkedSlots.has(slot)) return;
+  checkedSlots.add(slot);
+  const raw = st.getItem(slotKey(slot));
+  if (raw && !parseSave(raw)) st.setItem(slot <= 1 ? BACKUP_KEY : `${BACKUP_KEY}-${slot}`, raw);
+}
+
+export function saveGame(state: GameState, slot: number = getActiveSlot()): boolean {
   const st = storage();
   if (!st) return false;
   try {
-    backupUnreadable(st);
-    st.setItem(SAVE_KEY, serialize(state));
+    backupUnreadable(st, slot);
+    st.setItem(slotKey(slot), serialize(state));
     return true;
   } catch {
     return false;
   }
 }
 
-export function loadGame(): GameState | null {
-  return parseSave(storage()?.getItem(SAVE_KEY) ?? null);
+export function loadGame(slot: number = getActiveSlot()): GameState | null {
+  return parseSave(storage()?.getItem(slotKey(slot)) ?? null);
 }
 
 /** セーブデータはあるのに読めない（壊れている・新しいバージョンで保存された）とき true */
-export function hasUnreadableSave(): boolean {
-  const raw = storage()?.getItem(SAVE_KEY) ?? null;
+export function hasUnreadableSave(slot: number = getActiveSlot()): boolean {
+  const raw = storage()?.getItem(slotKey(slot)) ?? null;
   return !!raw && !parseSave(raw);
 }
 
-export function clearSave(): void {
+export function clearSave(slot: number = getActiveSlot()): void {
   try {
-    storage()?.removeItem(SAVE_KEY);
+    storage()?.removeItem(slotKey(slot));
   } catch {
     // ignore
   }
@@ -200,7 +245,10 @@ const PLAIN_PREFIX = "PT1:";
 const GZIP_PREFIX = "PT2:";
 
 export interface TransferBundle {
+  /** いま遊んでいる枠のセーブ（古い形式との互換用） */
   save: GameState | null;
+  /** 枠1〜3のセーブ（index = 枠 − 1） */
+  saves?: Array<GameState | null>;
   hall: HallRecord[];
 }
 
@@ -236,17 +284,25 @@ export async function parseTransferCode(code: string): Promise<TransferBundle | 
     else return null;
     const data = JSON.parse(json) as Partial<TransferBundle>;
     const save = data.save ? parseSave(JSON.stringify(data.save)) : null;
+    const saves = Array.isArray(data.saves) ? data.saves.slice(0, SAVE_SLOTS).map((x) => (x ? parseSave(JSON.stringify(x)) : null)) : undefined;
     const hall = parseHall(JSON.stringify(data.hall ?? []));
-    if (!save && hall.length === 0) return null;
-    return { save, hall };
+    if (!save && !saves?.some(Boolean) && hall.length === 0) return null;
+    return { save, saves, hall };
   } catch {
     return null;
   }
 }
 
-/** 引っ越しデータを取り込む（セーブは上書き、殿堂は追加） */
+/** 引っ越し先で上書きされる枠（中身のある枠だけ） */
+export function transferTargets(bundle: TransferBundle): number[] {
+  if (bundle.saves) return bundle.saves.flatMap((x, k) => (x ? [k + 1] : []));
+  return bundle.save ? [getActiveSlot()] : [];
+}
+
+/** 引っ越しデータを取り込む（セーブは同じ枠に上書き、殿堂は追加） */
 export function importTransfer(bundle: TransferBundle): void {
-  if (bundle.save) saveGame(bundle.save);
+  if (bundle.saves) bundle.saves.forEach((x, k) => x && saveGame(x, k + 1));
+  else if (bundle.save) saveGame(bundle.save);
   const st = storage();
   if (!st) return;
   let hall = loadHall();
