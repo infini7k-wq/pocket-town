@@ -456,6 +456,7 @@ export function CityMap() {
   }, []);
 
   const covKind = RANGE_OVERLAYS.includes(overlay) ? (overlay as CoverageKind) : null;
+  const railTiles = useMemo(() => railTilesFor(state), [state]);
 
   // 効果範囲の境界線：範囲のプレビューがあればそれを、なければ表示中の施設の範囲を囲む
   const edgeSet = useMemo(() => {
@@ -536,6 +537,7 @@ export function CityMap() {
           previewEmoji={draftSim?.ok.has(i) ? draftSim.emoji : hover === i && preview?.ok ? preview.emoji : undefined}
           bigSize={b ? BUILDINGS[b.type].size : undefined}
           railSide={b?.type === "bulletTrain" ? railSideOf(x, y, state.width, state.height) : undefined}
+          railStrip={railTiles.get(i)}
           buildLeft={b?.buildLeft}
           inRange={rangeTiles.has(i)}
           rangeEdge={edgeSet ? edgeOf(i, x, y) : undefined}
@@ -832,13 +834,37 @@ function simulateStroke(state: GameState, tool: Tool, tiles: number[]) {
   return { ok, bad, skipped, cost: state.money - cur.money, reason, label, emoji };
 }
 
-/** 新幹線駅（2×2、(x,y) が左上）が面している地図の端 */
-function railSideOf(x: number, y: number, w: number, h: number): "top" | "right" | "bottom" | "left" | undefined {
-  if (x === 0) return "left";
-  if (x + 1 === w - 1) return "right";
-  if (y === 0) return "top";
-  if (y + 1 === h - 1) return "bottom";
-  return undefined;
+type Side = "top" | "right" | "bottom" | "left";
+/** 土地を買い足して地図の端から離れても、この距離までは線路を延ばして描く */
+const RAIL_MAX_GAP = 4;
+
+/** 新幹線駅（2×2、(x,y) が左上）から線路が出ていく、いちばん近い地図の端 */
+function railSideOf(x: number, y: number, w: number, h: number): Side | undefined {
+  const d: Array<[Side, number]> = [
+    ["left", x],
+    ["right", w - 1 - (x + 1)],
+    ["top", y],
+    ["bottom", h - 1 - (y + 1)],
+  ];
+  const [side, gap] = d.reduce((a, b) => (b[1] < a[1] ? b : a));
+  return gap <= RAIL_MAX_GAP ? side : undefined;
+}
+
+/** 駅と地図の端のあいだのマスに描く線路（マスのどの辺に沿って描くか） */
+function railTilesFor(state: { tiles: Array<{ building: { type: string } | null }>; width: number; height: number }): Map<number, Side> {
+  const out = new Map<number, Side>();
+  const w = state.width;
+  state.tiles.forEach((t, i) => {
+    if (t.building?.type !== "bulletTrain") return;
+    const x = i % w;
+    const y = Math.floor(i / w);
+    const side = railSideOf(x, y, w, state.height);
+    if (side === "left") for (let k = 0; k < x; k++) out.set(y * w + k, "bottom").set((y + 1) * w + k, "top");
+    if (side === "right") for (let k = x + 2; k < w; k++) out.set(y * w + k, "bottom").set((y + 1) * w + k, "top");
+    if (side === "top") for (let k = 0; k < y; k++) out.set(k * w + x, "right").set(k * w + x + 1, "left");
+    if (side === "bottom") for (let k = y + 2; k < state.height; k++) out.set(k * w + x, "right").set(k * w + x + 1, "left");
+  });
+  return out;
 }
 
 type TouchGesture =

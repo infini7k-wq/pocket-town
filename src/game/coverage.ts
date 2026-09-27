@@ -11,7 +11,7 @@ export type CoverageMap = Record<CoverageKind, number[]>;
 export const COVERAGE_KINDS: CoverageKind[] = ["park", "education", "health", "fire", "transit", "plaza", "shopping", "landmark"];
 
 /** 商業のレベルごとの「買い物の便利さ」 */
-const SHOPPING_STRENGTH = [0, 0.6, 0.85, 1, 1.15];
+const SHOPPING_STRENGTH = [0, 0.6, 0.85, 1, 1.15, 1.3];
 
 /** 範囲内の効果：中心で 1、範囲の端で 0.5 */
 export function falloff(dist: number, radius: number): number {

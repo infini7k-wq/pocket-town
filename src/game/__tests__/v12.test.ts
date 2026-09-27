@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { checkPlacement } from "../actions";
+import { checkExpandLand, checkPlacement, expandLand, placeBuilding, projectLimit } from "../actions";
+import { isUnlockedTile, population } from "../map";
+import { advanceMonth } from "../simulation";
 import { analyzeCity, demandLevel } from "../analysis";
 import { effectiveRadius } from "../coverage";
 import { computeNoise } from "../environment";
@@ -7,7 +9,7 @@ import { nextLevelChecks } from "../growth";
 import { createNewGame, previewTown } from "../state";
 import { TENDENCY_IDS, TRAIT_IDS, townStory } from "../traits";
 import type { TendencyId, TraitId } from "../types";
-import { blankState, idx, put, roadRow } from "./helpers";
+import { blankState, idx, put, roadRow, unwrap } from "./helpers";
 
 describe("v1.2 エンジン", () => {
   it("町の個性の専用施設は、その個性の町でしか建てられない", () => {
@@ -167,5 +169,73 @@ describe("はじめの町並みのランダム化", () => {
     }
     // 3種類のひな形 × 回転・反転で、役所の位置もばらばら
     expect(halls.size).toBeGreaterThanOrEqual(8);
+  });
+});
+
+describe("メガシティの先（土地の買い足し・5段目・2つ目の大型プロジェクト）", () => {
+  const megacity = () => {
+    const s = createNewGame("M", 3);
+    s.rank = "megacity";
+    s.money = 2_000_000_000;
+    // テストで大型施設を置く角のあたりは草地にしておく
+    for (const [x0, y0] of [[1, 1], [1, 20], [20, 1]]) for (let dy = 0; dy < 2; dy++) for (let dx = 0; dx < 2; dx++) s.tiles[(y0 + dy) * s.width + x0 + dx] = { terrain: "grass", building: null };
+    return s;
+  };
+
+  it("土地を買うとマップが 24→28→32 に広がり、町はそのまま中央に残る", () => {
+    let s = megacity();
+    const before = population(s);
+    const hall = s.tiles.findIndex((t) => t.building?.type === "cityHall");
+    s = unwrap(expandLand(s));
+    expect(s.width).toBe(28);
+    expect(s.tiles).toHaveLength(28 * 28);
+    expect(population(s)).toBe(before);
+    const hx = hall % 24;
+    const hy = Math.floor(hall / 24);
+    expect(s.tiles[(hy + 2) * 28 + hx + 2].building?.type).toBe("cityHall");
+    expect(isUnlockedTile(s, 0)).toBe(true); // 買った土地はすべて開発できる
+    expect(analyzeCity(s).unconnected).toBe(0);
+    s = unwrap(expandLand(s));
+    expect(s.width).toBe(32);
+    expect(checkExpandLand(s).ok).toBe(false); // 最大
+    expect(advanceMonth(s)).not.toBeNull();
+  });
+
+  it("2×2 の施設は、広げたあとも4マスがまとまったまま", () => {
+    let s = megacity();
+    s = unwrap(placeBuilding(s, "stadium", idx(s, 1, 1)));
+    s = unwrap(expandLand(s));
+    const anchor = (1 + 2) * s.width + 1 + 2;
+    expect(s.tiles[anchor].building?.type).toBe("stadium");
+    expect(s.tiles[anchor + 1].building?.anchor).toBe(anchor);
+    expect(s.tiles[anchor + s.width + 1].building?.anchor).toBe(anchor);
+  });
+
+  it("メガシティ前は土地を買えない", () => {
+    const s = createNewGame("M", 3);
+    s.money = 2_000_000_000;
+    expect(checkExpandLand(s).ok).toBe(false);
+  });
+
+  it("メガシティでは大型プロジェクトを2つまで建てられる", () => {
+    let s = megacity();
+    s = unwrap(placeBuilding(s, "stadium", idx(s, 1, 1)));
+    expect(checkPlacement(s, "stadium", idx(s, 1, 20)).ok).toBe(true);
+    s = unwrap(placeBuilding(s, "stadium", idx(s, 1, 20)));
+    expect(checkPlacement(s, "stadium", idx(s, 20, 1)).ok).toBe(false);
+    s.rank = "metropolis";
+    expect(projectLimit(s)).toBe(1);
+  });
+
+  it("5段目は大型プロジェクトの近くでだけ育つ", () => {
+    const s = blankState();
+    s.rank = "megacity";
+    roadRow(s, 8, 1, 14);
+    const home = put(s, 5, 9, "residential", 4, 200);
+    const label = () => nextLevelChecks(s, home, analyzeCity(s))!.find((c) => c.label.includes("大型プロジェクト"))!;
+    expect(label().ok).toBe(false);
+    put(s, 7, 10, "university", 1);
+    s.tiles[idx(s, 8, 10)].building = { ...s.tiles[idx(s, 8, 10)].building!, type: "annex" } as never;
+    expect(label().ok).toBe(true);
   });
 });

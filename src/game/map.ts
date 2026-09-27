@@ -1,5 +1,6 @@
 // マップモデル：グリッドの座標計算・範囲・近傍探索など、マップ構造に関する基本処理。
 
+import { MAP_SIZE } from "./config";
 import { getRank } from "./progression";
 import type { Building, BuildingType, GameState, Tile } from "./types";
 
@@ -78,7 +79,8 @@ export function forEachInRange(
 
 /** 現在のランクで建設できる範囲（両端を含む） */
 export function buildableBounds(state: Pick<GameState, "rank" | "width">): Bounds {
-  const size = Math.min(getRank(state.rank).mapSize, state.width);
+  // 土地を買い足したマップ（24マスより大きい）は、すべて開発できる
+  const size = state.width > MAP_SIZE ? state.width : Math.min(getRank(state.rank).mapSize, state.width);
   const min = Math.floor((state.width - size) / 2);
   return { min, max: min + size - 1 };
 }

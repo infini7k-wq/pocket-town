@@ -1,11 +1,12 @@
 // プレイヤーの操作（建設・撤去・税率・融資）。すべて新しい状態を返す純粋関数。
 
 import { BUILDINGS, isRoad, isZone } from "./buildings";
-import { ECONOMY } from "./config";
+import { ECONOMY, LAND_EXPANSION, MAP_SIZE, PROJECT_LIMIT } from "./config";
+import { createRng } from "./rng";
 import { anchorOf, countBuildings, footprint, isUnlockedTile, neighbors4, toXY } from "./map";
 import { getRank, isBuildingUnlocked, rankIndex } from "./progression";
 import { newBuilding } from "./state";
-import type { ActionResult, BuildingType, GameState, ZoneType } from "./types";
+import type { ActionResult, BuildingType, GameState, Tile, ZoneType } from "./types";
 
 const yen = (v: number) => `¥${Math.round(v).toLocaleString("ja-JP")}`;
 
@@ -30,6 +31,77 @@ export function buildCost(state: GameState, type: BuildingType, i: number): numb
   return cost;
 }
 
+/** 同じ大型プロジェクトを建てられる数（メガシティからは2つ） */
+export function projectLimit(state: Pick<GameState, "rank">): number {
+  return rankIndex(state.rank) >= rankIndex("megacity") ? PROJECT_LIMIT.megacity : PROJECT_LIMIT.normal;
+}
+
+// ---------------- 土地の買い足し ----------------
+
+/** 次に土地を買い足すときの費用と、買えるかどうか */
+export function checkExpandLand(state: GameState): { ok: boolean; cost: number; nextSize: number; reason?: string } {
+  const step = Math.round((state.width - MAP_SIZE) / (LAND_EXPANSION.band * 2));
+  const cost = LAND_EXPANSION.costs[step] ?? 0;
+  const nextSize = state.width + LAND_EXPANSION.band * 2;
+  if (state.gameOver) return { ok: false, cost, nextSize, reason: "ゲームは終了しています" };
+  if (rankIndex(state.rank) < rankIndex("megacity")) return { ok: false, cost, nextSize, reason: "土地の買い足しは「メガシティ」で解禁されます" };
+  if (nextSize > LAND_EXPANSION.maxSize || !cost) return { ok: false, cost, nextSize, reason: "これ以上は広げられません" };
+  if (state.money < cost) return { ok: false, cost, nextSize, reason: `資金が足りません（${yen(cost)} 必要）` };
+  return { ok: true, cost, nextSize };
+}
+
+/**
+ * となり町から土地を買い、マップの外側に帯状の土地を足す（24→28→32）。
+ * マスの番号がずれるので、マスを指す値（大型施設の本体・イベント・ニュース・住民の声など）もすべて付け替える。
+ */
+export function expandLand(state: GameState): ActionResult {
+  const check = checkExpandLand(state);
+  if (!check.ok) return { ok: false, error: check.reason ?? "土地を買えません" };
+  const band = LAND_EXPANSION.band;
+  const oldW = state.width;
+  const oldH = state.height;
+  const w = oldW + band * 2;
+  const h = oldH + band * 2;
+  const remap = (i: number) => (Math.floor(i / oldW) + band) * w + (i % oldW) + band;
+  const remapOpt = (i: number | undefined) => (i === undefined ? undefined : remap(i));
+  const rng = createRng(state.rngSeed ^ 0x6c8e9cf5);
+  const tiles: Tile[] = [];
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const ox = x - band;
+      const oy = y - band;
+      if (ox >= 0 && oy >= 0 && ox < oldW && oy < oldH) {
+        const t = state.tiles[oy * oldW + ox];
+        tiles.push({ ...t, building: t.building ? { ...t.building, anchor: remapOpt(t.building.anchor) } : null });
+        continue;
+      }
+      // 新しい土地：海や川は端からそのまま続き、それ以外は草地と森
+      const edge = state.tiles[Math.max(0, Math.min(oldH - 1, oy)) * oldW + Math.max(0, Math.min(oldW - 1, ox))];
+      tiles.push({ terrain: edge.terrain === "water" ? "water" : rng.chance(0.3) ? "forest" : "grass", building: null });
+    }
+  }
+  const draft: GameState = {
+    ...state,
+    width: w,
+    height: h,
+    tiles,
+    money: state.money - check.cost,
+    monthSpend: state.monthSpend + check.cost,
+    rngSeed: rng.seed,
+    pendingEvent: state.pendingEvent ? { ...state.pendingEvent, tile: remapOpt(state.pendingEvent.tile) } : null,
+    news: state.news.map((n) => ({ ...n, tile: remapOpt(n.tile) })),
+    voices: state.voices.map((v) => ({ ...v, tile: remapOpt(v.tile) })),
+    lastReport: state.lastReport
+      ? {
+          ...state.lastReport,
+          changes: state.lastReport.changes.map((c) => ({ ...c, tile: remap(c.tile) })),
+          events: state.lastReport.events.map((n) => ({ ...n, tile: remapOpt(n.tile) })),
+        }
+      : null,
+  };
+  return { ok: true, state: draft, message: `土地を買い足して ${w}×${h} マスに広がりました -${yen(check.cost)}` };
+}
+
 /** 地図の外周（となり町との境）のマスか */
 export function isOnEdge(state: Pick<GameState, "width" | "height">, i: number): boolean {
   const { x, y } = toXY(i, state.width);
@@ -50,7 +122,10 @@ export function checkPlacement(state: GameState, type: BuildingType, i: number):
   if (def.trait && def.trait !== state.profile.trait) return { ok: false, cost, reason: `${def.name}は別の個性の町の専用施設です` };
   if (def.size === 2) {
     // 大型施設：左上のマスを基準に2×2の空き地が必要
-    if (def.category === "project" && countBuildings(state, type) > 0) return { ok: false, cost, reason: `${def.name}は1つの街に1つまでです` };
+    const limit = projectLimit(state);
+    if (def.category === "project" && countBuildings(state, type) >= limit) {
+      return { ok: false, cost, reason: limit > 1 ? `${def.name}は1つの街に${limit}つまでです` : `${def.name}は1つの街に1つまでです（メガシティで2つまで）` };
+    }
     const { x, y } = toXY(i, state.width);
     if (x + 1 >= state.width || y + 1 >= state.height) return { ok: false, cost, reason: "2×2マスの空き地が必要です" };
     for (const j of cellsFor(state, type, i)) {

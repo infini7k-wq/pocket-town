@@ -360,7 +360,7 @@ export function voiceCandidates(state: GameState, a: CityAnalysis, report: Month
       severity: up.level >= 3 ? 34 : 24,
       tone: "good",
       persona: "resident",
-      text: up.level === 4 ? "タワーマンションが建った！景色が最高だって！" : up.level === 3 ? "新しいマンションが建った！街が都会になってきた。" : "近所に集合住宅が建って、にぎやかになってきた。",
+      text: up.level === 5 ? "超高層レジデンスが完成！街のどこからでも見えるよ！" : up.level === 4 ? "タワーマンションが建った！景色が最高だって！" : up.level === 3 ? "新しいマンションが建った！街が都会になってきた。" : "近所に集合住宅が建って、にぎやかになってきた。",
       tile: up.tile,
     });
   }

@@ -10,14 +10,28 @@ export const LEGACY_MAP_SIZE = 16;
 // ---------- 人口・雇用 ----------
 /** 人口のうち働き手になる割合 */
 export const WORKFORCE_RATIO = 0.5;
-/** 建物の最大レベル（Lv4 の超高層は「市」で解禁） */
-export const MAX_LEVEL = 4;
+/** 建物の最大レベル（Lv4 の超高層は「市」、Lv5 は「メガシティ」で解禁） */
+export const MAX_LEVEL = 5;
 /** 住宅レベルごとの定員（0 = 造成中） */
-export const RES_CAPACITY = [0, 14, 50, 110, 220];
+export const RES_CAPACITY = [0, 14, 50, 110, 220, 380];
 /** 商業レベルごとの雇用枠 */
-export const COM_JOBS = [0, 8, 24, 60, 120];
-/** 工業レベルごとの雇用枠（Lv4 はハイテク工業団地） */
-export const IND_JOBS = [0, 14, 36, 80, 140];
+export const COM_JOBS = [0, 8, 24, 60, 120, 200];
+/** 工業レベルごとの雇用枠（Lv4 はハイテク工業団地、Lv5 は先端研究所） */
+export const IND_JOBS = [0, 14, 36, 80, 140, 220];
+
+/** Lv5 に育つには、大型プロジェクトから何マス以内にあればよいか */
+export const LEVEL5_PROJECT_RANGE = 6;
+
+/** 土地の買い足し（メガシティから）。外側に2マスずつ広げる */
+export const LAND_EXPANSION = {
+  band: 2,
+  maxSize: 32,
+  /** 1回目・2回目の費用 */
+  costs: [400_000_000, 800_000_000],
+};
+
+/** 同じ大型プロジェクトを建てられる数（メガシティからは2つ） */
+export const PROJECT_LIMIT = { normal: 1, megacity: 2 };
 /** 中心地（役所）に道路で到達できない建物の効率 */
 export const DISCONNECTED_FACTOR = 0.5;
 
@@ -45,9 +59,9 @@ export const IND_SUPPORT = { base: 60, perCapita: 0.25 };
 
 // ---------- お店の大きさ ----------
 /** 商業が次のレベルに育つのに必要な「周り4マスに住む人」（index = 次のレベル） */
-export const SHOP_CATCHMENT = { radius: 4, residents: [0, 0, 150, 600, 1500], plazaFactor: 0.5 };
+export const SHOP_CATCHMENT = { radius: 4, residents: [0, 0, 150, 600, 1500, 2600], plazaFactor: 0.5 };
 /** 商業のレベルごとの買い物の範囲（マス） */
-export const SHOP_RADIUS = [0, 3, 3, 4, 5];
+export const SHOP_RADIUS = [0, 3, 3, 4, 5, 6];
 
 // ---------- 建設の需要 ----------
 export const DEMAND = {
@@ -100,14 +114,14 @@ export const ENVIRONMENT = {
   water: 4,
   /** 工業レベルごとの汚染 */
   /** 工業レベルごとの汚染（Lv4 のハイテク工場はクリーン） */
-  industrialPollution: [0, 10, 16, 24, 10],
+  industrialPollution: [0, 10, 16, 24, 10, 8],
   pollutionRadius: 3,
   trafficWeight: 6,
   trafficCap: 15,
 };
 
 /** 工業レベルごとの騒音（隣接で満額、2マス先で半分） */
-export const INDUSTRIAL_NOISE = [0, 6, 9, 12, 5];
+export const INDUSTRIAL_NOISE = [0, 6, 9, 12, 5, 4];
 
 // ---------- 交通 ----------
 export const TRAFFIC = {
@@ -165,7 +179,7 @@ export const ECONOMY = {
 // ---------- 建物の成長 ----------
 export const GROWTH = {
   /** レベルアップに必要な成長ポイント（index = 現在のレベル） */
-  threshold: [0, 60, 90, 100, 100],
+  threshold: [0, 60, 90, 100, 100, 110],
   min: -100,
   max: 100,
   /** 造成中から完成したときの入居率 */
@@ -228,7 +242,7 @@ export const RANKS: RankDef[] = [
   { id: "town", name: "町", en: "Town", emoji: "🏡", minPopulation: 1000, mapSize: 16, maxLevel: 3, loanLimit: 5_000_000, reward: 1_000_000 },
   { id: "city", name: "市", en: "City", emoji: "🏯", minPopulation: 3000, mapSize: 24, maxLevel: 4, loanLimit: 15_000_000, reward: 3_000_000 },
   { id: "metropolis", name: "大都市", en: "Major City", emoji: "🌃", minPopulation: 8000, mapSize: 24, maxLevel: 4, loanLimit: 40_000_000, reward: 8_000_000 },
-  { id: "megacity", name: "メガシティ", en: "Megacity", emoji: "🌐", minPopulation: 15000, mapSize: 24, maxLevel: 4, loanLimit: 80_000_000, reward: 20_000_000 },
+  { id: "megacity", name: "メガシティ", en: "Megacity", emoji: "🌐", minPopulation: 15000, mapSize: 24, maxLevel: 5, loanLimit: 80_000_000, reward: 20_000_000 },
 ];
 
 export const HISTORY_LIMIT = 120;

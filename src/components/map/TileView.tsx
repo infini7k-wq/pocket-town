@@ -36,12 +36,14 @@ export interface TileViewProps {
   buildLeft?: number;
   /** 新幹線駅：線路が出ていく地図の端の向き */
   railSide?: "top" | "right" | "bottom" | "left";
+  /** 駅から地図の端へ続く線路（マスのこの辺に沿って半分の幅で描く） */
+  railStrip?: "top" | "right" | "bottom" | "left";
 }
 
 const ZONE_PLATE: Record<string, string[]> = {
-  residential: ["#e8f5e0", "#c9ebbd", "#a6dc94", "#86cc72", "#5fb54a"],
-  commercial: ["#e3effc", "#c6def9", "#9fc6f2", "#78aeea", "#4f8fdc"],
-  industrial: ["#fbf0d6", "#f5deaa", "#ecc97a", "#e0b050", "#d4943a"],
+  residential: ["#e8f5e0", "#c9ebbd", "#a6dc94", "#86cc72", "#5fb54a", "#3f9a2e"],
+  commercial: ["#e3effc", "#c6def9", "#9fc6f2", "#78aeea", "#4f8fdc", "#3569c4"],
+  industrial: ["#fbf0d6", "#f5deaa", "#ecc97a", "#e0b050", "#d4943a", "#b8741f"],
 };
 
 /** 造成中（レベル0）の点線の色：ゾーンの色に合わせる */
@@ -52,7 +54,7 @@ const ZONE_DASH: Record<string, string> = {
 };
 
 /** レベルごとの絵文字の大きさ（マスに対する割合）。小さいマスでは全体に大きめにする */
-const EMOJI_SCALE = [0.46, 0.6, 0.72, 0.84, 0.92];
+const EMOJI_SCALE = [0.46, 0.6, 0.72, 0.84, 0.92, 0.98];
 
 function Road({ mask, avenue, traffic, size }: { mask: number; avenue: boolean; traffic: number; size: number }) {
   const w = avenue ? 0.64 : 0.46;
@@ -117,7 +119,7 @@ function Sprite({ type, level, abandoned, size }: { type: BuildingType; level: n
         <span
           className={cx(
             "absolute bottom-[4%] right-[4%] flex items-center justify-center rounded-full font-black leading-none shadow ring-1 ring-white",
-            level === 4 ? "bg-violet-600 text-white" : level === 3 ? "bg-amber-400 text-amber-950" : level === 2 ? "bg-slate-700 text-white" : "bg-white text-slate-700",
+            level === 5 ? "bg-gradient-to-br from-amber-300 to-rose-500 text-white" : level === 4 ? "bg-violet-600 text-white" : level === 3 ? "bg-amber-400 text-amber-950" : level === 2 ? "bg-slate-700 text-white" : "bg-white text-slate-700",
           )}
           style={{ width: Math.max(9, size * 0.3), height: Math.max(9, size * 0.3), fontSize: Math.max(7, size * 0.2) }}
           aria-label={`レベル${level}`}
@@ -141,6 +143,17 @@ function Rail({ side }: { side: "top" | "right" | "bottom" | "left" }) {
     ? { top: "40%", height: "20%", width: "50%", [side]: 0 }
     : { left: "40%", width: "20%", height: "50%", [side]: 0 };
   return <div className="absolute" style={{ ...pos, backgroundImage: `${rails}, ${sleepers}`, backgroundColor: "#d7ccc8" }} aria-hidden />;
+}
+
+/** 地図の端へ続く線路の一部（2マスにまたがる線路の、片側のマスの分） */
+function RailStrip({ edge }: { edge: "top" | "right" | "bottom" | "left" }) {
+  const horizontal = edge === "top" || edge === "bottom";
+  const sleepers = `repeating-linear-gradient(${horizontal ? "90deg" : "0deg"}, #8d6e63 0 3px, transparent 3px 7px)`;
+  const rail = horizontal
+    ? `linear-gradient(0deg, ${edge === "bottom" ? "transparent 0 10%, #455a64 10% 60%, transparent 60%" : "transparent 0 40%, #455a64 40% 90%, transparent 90%"})`
+    : `linear-gradient(90deg, ${edge === "right" ? "transparent 0 10%, #455a64 10% 60%, transparent 60%" : "transparent 0 40%, #455a64 40% 90%, transparent 90%"})`;
+  const pos: React.CSSProperties = horizontal ? { left: 0, right: 0, height: "20%", [edge]: 0 } : { top: 0, bottom: 0, width: "20%", [edge]: 0 };
+  return <div className="absolute" style={{ ...pos, backgroundImage: `${rail}, ${sleepers}`, backgroundColor: "#d7ccc8" }} aria-hidden />;
 }
 
 function BigSprite({ type, level, buildLeft, size, railSide }: { type: BuildingType; level: number; buildLeft?: number; size: number; railSide?: TileViewProps["railSide"] }) {
@@ -181,6 +194,7 @@ function TileViewImpl(p: TileViewProps) {
           {p.checker ? "🌲" : "🌳"}
         </span>
       )}
+      {p.railStrip && <RailStrip edge={p.railStrip} />}
       {road && <Road mask={p.roadMask} avenue={p.type === "avenue"} traffic={p.traffic} size={s} />}
       {p.type && p.bigSize === 2 && <BigSprite type={p.type} level={p.level} buildLeft={p.buildLeft} size={s} railSide={p.railSide} />}
       {p.type && !road && !p.bigSize && p.type !== "annex" && <Sprite type={p.type} level={p.level} abandoned={p.abandoned} size={s} />}

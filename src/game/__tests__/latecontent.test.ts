@@ -74,7 +74,8 @@ describe("超高層（Lv4）と埋め立て", () => {
       b.growth = Math.max(b.growth, 100);
     }
     expect(grew).toBe(true);
-    expect(nextLevelChecks(s, home, analyzeCity(s))).toBeNull(); // 最大レベル
+    // 5段目はメガシティから
+    expect(nextLevelChecks(s, home, analyzeCity(s))!.some((c) => !c.ok && c.label.includes("メガシティ"))).toBe(true);
   });
 
   it("大きな公園は1マスで半径4マスに効く", () => {

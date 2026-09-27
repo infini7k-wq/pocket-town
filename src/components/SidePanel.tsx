@@ -4,6 +4,10 @@ import {
   BUILDINGS,
   ECONOMY,
   projectsFor,
+  projectLimit,
+  checkExpandLand,
+  expandLand,
+  countBuildings,
   cityScore,
   townStory,
   nextAdvice,
@@ -123,7 +127,8 @@ function NextGoalCard() {
   const projects = projectsFor(state.profile.trait);
   const project = projects.find((p) => isBuildingUnlocked(p, state.rank) && !state.tiles.some((t) => t.building?.type === p));
   const lockedProject = projects.find((p) => !isBuildingUnlocked(p, state.rank));
-  if (!next && !project) return <BeyondCard />;
+  // メガシティでは「その先」のカード（土地の買い足し・2つ目の大型プロジェクトなど）
+  if (!next) return <BeyondCard />;
   return (
     <section className="rounded-2xl bg-gradient-to-br from-sky-50 to-indigo-50 p-3.5 shadow-sm ring-1 ring-indigo-100">
       <div className="text-[11px] font-black text-indigo-700">🚀 次の大きな目標</div>
@@ -164,7 +169,14 @@ function NextGoalCard() {
 /** メガシティのあと：街の評価と、残りの目標 */
 function BeyondCard() {
   const { state, analysis } = useCity();
-  const { openPanel } = useGame();
+  const { openPanel, runAction, toast, pickTool } = useGame();
+  const land = checkExpandLand(state);
+  const buyLand = () => {
+    if (!window.confirm(`となり町から土地を買い、マップを ${land.nextSize}×${land.nextSize} マスに広げます（${formatYen(land.cost)}）。よろしいですか？`)) return;
+    if (runAction((s) => expandLand(s))) toast(`🗺️ 土地が広がりました（${land.nextSize}×${land.nextSize}）`, "good");
+  };
+  // 2つ目を建てられる大型プロジェクト
+  const second = projectsFor(state.profile.trait).find((p) => isBuildingUnlocked(p, state.rank) && countBuildings(state, p) < projectLimit(state));
   const score = cityScore(state, analysis);
   const weak = weakestPart(score);
   const left = GOALS.filter((g) => !state.achievements.includes(g.id)).slice(0, 3);
@@ -194,6 +206,34 @@ function BeyondCard() {
           ))}
         </ul>
       )}
+      <div className="mt-2 space-y-1.5 rounded-xl bg-white/70 p-2">
+        <div className="flex items-center justify-between gap-2">
+          <div className="min-w-0 text-[11px] font-bold text-slate-700">
+            🗺️ 土地を買い足す
+            <div className="text-[10px] text-slate-500">{land.cost ? `となり町から土地を買い、${land.nextSize}×${land.nextSize}マスに（${formatYen(land.cost, { compact: true })}）` : "これ以上は広げられません（最大の広さです）"}</div>
+          </div>
+          {land.cost > 0 && (
+            <button type="button" onClick={buyLand} disabled={!land.ok} className="shrink-0 rounded-full bg-violet-600 px-2.5 py-1 text-[11px] font-black text-white disabled:opacity-40">
+              買う
+            </button>
+          )}
+        </div>
+        {land.cost > 0 && !land.ok && land.reason && <div className="text-[10px] font-bold text-rose-600">{land.reason}</div>}
+        {second && (
+          <div className="flex items-center justify-between gap-2">
+            <div className="min-w-0 text-[11px] font-bold text-slate-700">
+              {countBuildings(state, second) === 0 ? "🏗️ まだ建てていない大型プロジェクト" : "🏗️ 大型プロジェクトの2つ目"}
+              <div className="text-[10px] text-slate-500">
+                {BUILDINGS[second].emoji[1]} {BUILDINGS[second].name}{countBuildings(state, second) === 0 ? "を建てられます" : "などを、もう1つ建てられます"}
+              </div>
+            </div>
+            <button type="button" onClick={() => pickTool(second)} className="shrink-0 rounded-full bg-indigo-600 px-2.5 py-1 text-[11px] font-black text-white">
+              選ぶ
+            </button>
+          </div>
+        )}
+        <div className="text-[10px] font-bold text-slate-500">⬆️ 大型プロジェクトの近くでは、建物が5段目（🌆・🌃・🚀）まで育ちます</div>
+      </div>
       <div className="mt-1.5 text-[10px] font-bold text-slate-400">🎯 タイトル画面の「チャレンジ」にも挑戦できます</div>
     </section>
   );
