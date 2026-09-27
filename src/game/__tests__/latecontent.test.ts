@@ -28,8 +28,10 @@ describe("広いマップとランク", () => {
   it("初期の町はマップの中央にあり、道路はすべて役所につながっている", () => {
     for (const seed of [1, 2, 3, 4]) {
       const s = createNewGame("A", seed);
+      // 役所は町の中心あたり（町並みは回転・反転するので、中央の数マスのどこか）
       const hall = s.tiles.findIndex((t) => t.building?.type === "cityHall");
-      expect(hall).toBe(11 * MAP_SIZE + 11);
+      const [hx, hy] = [hall % MAP_SIZE, Math.floor(hall / MAP_SIZE)];
+      expect(hx >= 9 && hx <= 14 && hy >= 9 && hy <= 14).toBe(true);
       expect(analyzeCity(s).unconnected).toBe(0);
     }
   });
@@ -234,7 +236,8 @@ describe("旧セーブ（v1・16×16）の移行", () => {
     const migrated = migrateSave(v1)!;
     expect(migrated.width).toBe(MAP_SIZE);
     expect(population(migrated)).toBe(population(now));
-    expect(migrated.tiles.findIndex((t) => t.building?.type === "cityHall")).toBe(11 * MAP_SIZE + 11);
+    // 元の町の役所と同じ場所にある
+    expect(migrated.tiles.findIndex((t) => t.building?.type === "cityHall")).toBe(now.tiles.findIndex((t) => t.building?.type === "cityHall"));
     expect(migrated.era.next).toMatchObject({ id: "postIndustrial", turn: 212 });
     expect(migrated.requests).toEqual([]);
     expect(advanceMonth(migrated)).not.toBeNull();

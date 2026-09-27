@@ -138,3 +138,34 @@ describe("点検で見つかった不具合の再発防止", () => {
     expect(d.commercial).toBeLessThanOrEqual(0);
   });
 });
+
+describe("はじめの町並みのランダム化", () => {
+  it("どの町でも、建物はすべて道路で役所につながり、工場は住宅から離れていて、毎回ちがう町並みになる", () => {
+    const halls = new Set<number>();
+    for (let seed = 0; seed < 240; seed++) {
+      const s = createNewGame("A", seed);
+      const a = analyzeCity(s);
+      halls.add(s.tiles.findIndex((t) => t.building?.type === "cityHall"));
+      const homes: number[] = [];
+      const factories: number[] = [];
+      s.tiles.forEach((t, i) => {
+        const b = t.building;
+        if (!b || b.type === "road") return;
+        expect(t.terrain).not.toBe("water");
+        if (b.type !== "cityHall") expect(a.net.connected[i], `seed ${seed} tile ${i} ${b.type}`).toBe(true);
+        if (b.type === "residential") homes.push(i);
+        if (b.type === "industrial") factories.push(i);
+      });
+      for (const f of factories)
+        for (const h of homes) {
+          const dx = (f % s.width) - (h % s.width);
+          const dy = Math.floor(f / s.width) - Math.floor(h / s.width);
+          expect(Math.hypot(dx, dy), `seed ${seed}`).toBeGreaterThan(2.5);
+        }
+      expect(a.population).toBeGreaterThan(150);
+      expect(a.population).toBeLessThan(400);
+    }
+    // 3種類のひな形 × 回転・反転で、役所の位置もばらばら
+    expect(halls.size).toBeGreaterThanOrEqual(8);
+  });
+});
