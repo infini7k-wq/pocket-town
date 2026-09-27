@@ -11,6 +11,8 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
+  // iPhone のノッチ・ホームバーの下まで背景を広げ、中身は safe-area で避ける
+  viewportFit: "cover",
   themeColor: "#d8efff",
 };
 

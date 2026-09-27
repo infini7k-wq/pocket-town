@@ -168,8 +168,8 @@ export const EVENTS = {
 
 // ---------- 時代 ----------
 export const ERAS = {
-  /** 最初の時代の長さ（月） */
-  firstLength: 60,
+  /** 最初の時代の長さ（月）。村のうちに一度「時代の予告」を体験できるよう短め */
+  firstLength: 36,
   /** 2つ目以降の時代の長さ（月、この範囲でランダム） */
   minLength: 60,
   maxLength: 84,
@@ -206,11 +206,11 @@ export interface RankDef {
 }
 
 export const RANKS: RankDef[] = [
-  { id: "village", name: "村", en: "Village", emoji: "🏡", minPopulation: 0, mapSize: 12, maxLevel: 2, loanLimit: 2_000_000, reward: 0 },
-  { id: "town", name: "町", en: "Town", emoji: "🏘️", minPopulation: 1000, mapSize: 16, maxLevel: 3, loanLimit: 5_000_000, reward: 1_000_000 },
-  { id: "city", name: "市", en: "City", emoji: "🏙️", minPopulation: 3000, mapSize: 24, maxLevel: 4, loanLimit: 15_000_000, reward: 3_000_000 },
-  { id: "metropolis", name: "大都市", en: "Major City", emoji: "🌆", minPopulation: 8000, mapSize: 24, maxLevel: 4, loanLimit: 40_000_000, reward: 8_000_000 },
-  { id: "megacity", name: "メガシティ", en: "Megacity", emoji: "🌃", minPopulation: 15000, mapSize: 24, maxLevel: 4, loanLimit: 80_000_000, reward: 20_000_000 },
+  { id: "village", name: "村", en: "Village", emoji: "🌾", minPopulation: 0, mapSize: 12, maxLevel: 2, loanLimit: 2_000_000, reward: 0 },
+  { id: "town", name: "町", en: "Town", emoji: "🏡", minPopulation: 1000, mapSize: 16, maxLevel: 3, loanLimit: 5_000_000, reward: 1_000_000 },
+  { id: "city", name: "市", en: "City", emoji: "🏯", minPopulation: 3000, mapSize: 24, maxLevel: 4, loanLimit: 15_000_000, reward: 3_000_000 },
+  { id: "metropolis", name: "大都市", en: "Major City", emoji: "🌃", minPopulation: 8000, mapSize: 24, maxLevel: 4, loanLimit: 40_000_000, reward: 8_000_000 },
+  { id: "megacity", name: "メガシティ", en: "Megacity", emoji: "🌐", minPopulation: 15000, mapSize: 24, maxLevel: 4, loanLimit: 80_000_000, reward: 20_000_000 },
 ];
 
 export const HISTORY_LIMIT = 120;

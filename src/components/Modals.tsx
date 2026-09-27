@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { cityScore, describeEffects, describePendingEvent, formatDate, formatNumber, formatYen, getEra, getRank, getScenario, goalsAchieved, unlocksForRank } from "@/game";
 import { useCity, useGame } from "./GameProvider";
 import { Button, Modal, cx } from "./ui";
@@ -14,7 +15,20 @@ export function EventModal() {
   const { state, analysis } = useCity();
   const { chooseEventOption, focusTile, rankUp, eraShift, scenarioResult } = useGame();
   const view = describePendingEvent(state, analysis);
+  // 地図を見てから決められるよう、ダイアログを一時的にたためる
+  const [peek, setPeek] = useState(false);
   if (!view || state.gameOver || rankUp || eraShift || scenarioResult) return null;
+  if (peek) {
+    return (
+      <button
+        type="button"
+        onClick={() => setPeek(false)}
+        className="animate-sheet-in fixed bottom-[calc(160px+env(safe-area-inset-bottom))] left-1/2 z-50 -translate-x-1/2 whitespace-nowrap rounded-full bg-slate-900 px-5 py-3 text-sm font-black text-white shadow-2xl lg:bottom-8"
+      >
+        {view.def.emoji} 「{view.def.title}」に戻って決める
+      </button>
+    );
+  }
   return (
     <Modal label={view.def.title}>
       <div className={cx("bg-gradient-to-br px-6 pb-5 pt-6 text-white", TONE_HEADER[view.def.tone])}>
@@ -28,11 +42,16 @@ export function EventModal() {
       </div>
       <div className="space-y-3 p-5">
         <p className="text-sm font-bold leading-relaxed text-slate-700">{view.message}</p>
-        {view.tile !== undefined && (
-          <button type="button" onClick={() => focusTile(view.tile!)} className="text-xs font-bold text-blue-600 hover:underline">
-            📍 対象の場所を地図で見る
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={() => {
+            if (view.tile !== undefined) focusTile(view.tile);
+            setPeek(true);
+          }}
+          className="text-xs font-bold text-blue-600 hover:underline"
+        >
+          {view.tile !== undefined ? "📍 対象の場所を地図で見る" : "🗺️ 地図を見てから決める"}
+        </button>
         <div className="text-xs font-bold text-slate-500">どうしますか？</div>
         <div className="space-y-2">
           {view.choices.map((c) => (
@@ -241,27 +260,52 @@ export function GameOverModal() {
 }
 
 const HELP_STEPS = [
-  { icon: "🛣️", title: "道路をつなぐ", body: "建物は道路に面していないと機能しません。道路は役所までつなげましょう。ドラッグで連続して置けます。" },
-  { icon: "🏠", title: "住む・働く場所をつくる", body: "住宅・商業・工業の土地を用意すると、翌月に住民や会社が建物を建てます。「街の状況」の需要メーターが高いものが狙い目。" },
-  { icon: "▶", title: "翌月へ進める", body: "人口の転入・転出、税収、建物の成長、イベントが1か月分進みます。" },
-  { icon: "💬", title: "住民の声を聞く", body: "困りごとと解決のヒントを教えてくれます。「場所を見る」で問題の場所がわかります。" },
+  { icon: "🛣️", title: "道路をつなぐ", body: "建物は道路に面していないと使えません。道路は役所までつなげよう。なぞると連続で置けます。" },
+  { icon: "🏠", title: "住む・働く場所をつくる", body: "住宅・商業・工業の土地を用意すると、翌月に住民や会社が建物を建てます。「🧭 今月のおすすめ」を見れば次にやることがわかります。" },
+  { icon: "▶", title: "翌月へ進める", body: "人の出入り・税収・建物の成長・できごとが1か月分進みます。「⏩ 3か月」でまとめて進めることもできます。" },
+  { icon: "💬", title: "住民の声を聞く", body: "困りごとと解決のヒントを教えてくれます。「📍 場所を見る」で問題の場所、ボタンで必要な建物を選べます。" },
 ];
 
 const HELP_TIPS = [
   "仕事が足りない → 商業・工業を建てる。働き手が足りない → 住宅を建てる。",
-  "工場は住宅から2マス以上離すと騒音の苦情が減ります。",
-  "公園は安くて満足度と環境の両方に効きます。",
-  "マンション（住宅Lv3）には学校と、町ランク（人口1,000人）が必要です。",
-  "渋滞したら並行する道路、町になったら大通りやバス停で解消。",
-  "お金が足りないときは税率・融資・公共施設の売却で立て直せます。",
-  "5〜7年ごとに「時代」が変わり、求められるものが変わります。予告が出たら備えましょう。",
-  "📋 依頼を期限内にかなえると報酬がもらえます。市になると大型プロジェクト（2×2）も建てられます。",
-  "川や海には道路（橋）を架けられます。",
+  "お金が足りないときは、税率・借入・公共施設の撤去（40%が戻る）で立て直せます。",
+  "5〜7年ごとに「時代」が変わり、求められるものが変わります。予告が出たら備えよう。",
+  "📋 依頼を期限内にかなえると報酬がもらえます。「市」になると大型プロジェクト（2×2）も建てられます。",
+  "間違えて置いたら「↩️ 戻す」。今月の操作なら取り消せます。",
 ];
+
+/** 置き方のコツ（ベストプラクティス） */
+const PLACEMENT_TIPS: Array<{ icon: string; title: string; body: string }> = [
+  { icon: "🌳", title: "住宅のとなりには公園", body: "公園は安く、2マス先の家まで満足度と空気をよくします。住宅地のすき間に置こう。" },
+  { icon: "🛍️", title: "お店は住宅から3マス以内", body: "近くにお店があると買い物が便利になり満足度が上がります。住宅のとなりに置いても大丈夫（騒音なし）。" },
+  { icon: "🏭", title: "工場は住宅から3マス以上はなす", body: "騒音は2マス先、煙は3マス先まで届きます。公園では騒音は消えないので、距離をとるのが一番。" },
+  { icon: "🏫", title: "学校・病院は住宅地の真ん中に", body: "学校は4マス、病院・消防署は5マス先まで届きます。1つで広くカバーできる場所を選ぼう。" },
+  { icon: "🚏", title: "バス停は大きな建物の近くに", body: "タワーマンションやオフィスビル（Lv4）には、3マス以内のバス停（または駅）が必要です。" },
+  { icon: "🛣️", title: "道路は格子状に、抜け道も", body: "1本の道に車が集中すると渋滞します。並行する道路や大通りで分散しよう。" },
+];
+
+const RANGE_TIPS = [
+  "効果は「直線距離」で届きます。道路・川・ほかの建物をはさんでも届きます。",
+  "施設は道路に面していないと効果がありません。役所まで道路がつながっていないと効果は半分です。",
+  "中心ほど効果が強く、範囲の端では半分になります。",
+  "2×2 の大型施設（大学など）は、建物の端から数えます。",
+  "地図の上の「施設の範囲」を選ぶと、届いている家に ✓、届いていない家に ✗ がつきます。",
+  "建てる前は紫の枠で、置いたときに届く範囲がわかります。",
+];
+
+const EXAMPLE_ROWS = ["🏠🏠🌳🏠🏠🏪🏠", "🛣️🛣️🛣️🛣️🛣️🛣️🛣️", "🏠🏪🏫🏠🚏🏠🌳", "🛣️🛣️🛣️🛣️🛣️🛣️🛣️", "🌳🌳🌳🌳🌳🌳🌳", "🛣️🛣️🛣️🛣️🛣️🛣️🛣️", "🏭🏭🏭🏭🏭🏭🏭"];
+
+type HelpPage = "start" | "placement" | "range";
 
 export function HelpModal() {
   const { helpOpen, setHelpOpen } = useGame();
+  const [page, setPage] = useState<HelpPage>("start");
   if (!helpOpen) return null;
+  const pages: Array<{ id: HelpPage; label: string }> = [
+    { id: "start", label: "🔰 はじめに" },
+    { id: "placement", label: "🏘️ 置き方のコツ" },
+    { id: "range", label: "📡 効果範囲" },
+  ];
   return (
     <Modal label="遊び方" onClose={() => setHelpOpen(false)}>
       <div className="bg-gradient-to-br from-sky-400 to-emerald-400 px-6 pb-5 pt-6 text-white">
@@ -271,31 +315,108 @@ export function HelpModal() {
         <h2 className="mt-1 text-xl font-black">ようこそ、町長さん！</h2>
         <p className="text-sm font-bold text-white/90">小さな町を、あなたの判断で育てましょう。</p>
       </div>
+      <div className="flex gap-1 border-b border-slate-100 px-4 pt-3" role="tablist">
+        {pages.map((p) => (
+          <button
+            key={p.id}
+            type="button"
+            role="tab"
+            aria-selected={page === p.id}
+            onClick={() => setPage(p.id)}
+            className={cx("rounded-t-xl px-3 py-1.5 text-xs font-black", page === p.id ? "bg-slate-100 text-slate-800" : "text-slate-400 hover:text-slate-600")}
+          >
+            {p.label}
+          </button>
+        ))}
+      </div>
       <div className="space-y-4 p-5">
-        <ol className="space-y-2.5">
-          {HELP_STEPS.map((s, i) => (
-            <li key={s.title} className="flex gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-slate-100 text-xl" aria-hidden>
-                {s.icon}
-              </div>
-              <div>
-                <div className="text-sm font-black text-slate-800">
-                  {i + 1}. {s.title}
+        {page === "start" && (
+          <>
+            <ol className="space-y-2.5">
+              {HELP_STEPS.map((s, i) => (
+                <li key={s.title} className="flex gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-slate-100 text-xl" aria-hidden>
+                    {s.icon}
+                  </div>
+                  <div>
+                    <div className="text-sm font-black text-slate-800">
+                      {i + 1}. {s.title}
+                    </div>
+                    <div className="text-xs font-bold leading-relaxed text-slate-500">{s.body}</div>
+                  </div>
+                </li>
+              ))}
+            </ol>
+            <div className="rounded-2xl bg-amber-50 p-3">
+              <div className="text-xs font-black text-amber-800">💡 コツ</div>
+              <ul className="mt-1 list-disc space-y-0.5 pl-4 text-[11px] font-bold leading-relaxed text-amber-900">
+                {HELP_TIPS.map((t) => (
+                  <li key={t}>{t}</li>
+                ))}
+              </ul>
+            </div>
+          </>
+        )}
+        {page === "placement" && (
+          <>
+            <div className="rounded-2xl bg-emerald-50 p-3">
+              <div className="text-xs font-black text-emerald-800">よい配置の例</div>
+              <div className="mt-1.5 flex gap-3">
+                <div className="shrink-0 font-mono text-base leading-[1.35]" aria-label="住宅の間に公園とお店、学校を置き、緑の帯と道路をはさんで工場をはなした例">
+                  {EXAMPLE_ROWS.map((r, i) => (
+                    <div key={i}>{r}</div>
+                  ))}
                 </div>
-                <div className="text-xs font-bold leading-relaxed text-slate-500">{s.body}</div>
+                <ul className="space-y-1 text-[11px] font-bold leading-snug text-emerald-900">
+                  <li>住宅のすき間に 🌳公園・🏪お店</li>
+                  <li>🏫学校と🚏バス停は住宅地の中に</li>
+                  <li>🌳緑の帯と道路をはさんで、🏭工場は4マス先</li>
+                </ul>
               </div>
-            </li>
-          ))}
-        </ol>
-        <div className="rounded-2xl bg-amber-50 p-3">
-          <div className="text-xs font-black text-amber-800">💡 コツ</div>
-          <ul className="mt-1 list-disc space-y-0.5 pl-4 text-[11px] font-bold leading-relaxed text-amber-900">
-            {HELP_TIPS.map((t) => (
-              <li key={t}>{t}</li>
-            ))}
-          </ul>
-        </div>
-        <div className="hidden rounded-2xl bg-slate-50 p-3 text-[11px] font-bold text-slate-500 lg:block">⌨️ ショートカット：1〜9・0 で建設ツール、B で撤去、Esc で「調べる」、N / Enter で翌月へ</div>
+            </div>
+            <ul className="space-y-2.5">
+              {PLACEMENT_TIPS.map((t) => (
+                <li key={t.title} className="flex gap-3">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-lg" aria-hidden>
+                    {t.icon}
+                  </div>
+                  <div>
+                    <div className="text-sm font-black text-slate-800">{t.title}</div>
+                    <div className="text-xs font-bold leading-relaxed text-slate-500">{t.body}</div>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+        {page === "range" && (
+          <>
+            <div className="grid grid-cols-2 gap-1.5 text-[11px] font-bold text-slate-700">
+              {[
+                ["🌳 公園", "2マス"],
+                ["🏞️ 大きな公園", "4マス"],
+                ["🛍️ お店（買い物）", "3マス"],
+                ["🏫 学校", "4マス"],
+                ["🎓 大学（2×2）", "8マス"],
+                ["🏥 病院", "5マス"],
+                ["🚒 消防署", "5マス"],
+                ["🚏 バス停", "3マス"],
+                ["🚉 駅", "5マス"],
+              ].map(([k, v]) => (
+                <div key={k} className="flex justify-between rounded-lg bg-slate-50 px-2 py-1">
+                  <span>{k}</span>
+                  <span className="tabular text-blue-700">{v}</span>
+                </div>
+              ))}
+            </div>
+            <ul className="list-disc space-y-1 pl-4 text-xs font-bold leading-relaxed text-slate-600">
+              {RANGE_TIPS.map((t) => (
+                <li key={t}>{t}</li>
+              ))}
+            </ul>
+          </>
+        )}
+        <div className="hidden rounded-2xl bg-slate-50 p-3 text-[11px] font-bold text-slate-500 lg:block">⌨️ ショートカット：1〜9・0 で建設ツール、B で撤去、Esc で「調べる」、N / Enter で翌月へ、⌘Z / Ctrl+Z で戻す</div>
         <Button variant="go" size="lg" className="w-full" onClick={() => setHelpOpen(false)}>
           はじめる
         </Button>

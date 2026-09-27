@@ -2,7 +2,7 @@
 
 import { BUILDINGS } from "./buildings";
 import { DISCONNECTED_FACTOR } from "./config";
-import { forEachInRadius } from "./map";
+import { forEachInRange } from "./map";
 import type { RoadNetwork } from "./roads";
 import type { CoverageKind, GameState } from "./types";
 
@@ -34,7 +34,7 @@ export function computeCoverage(state: Pick<GameState, "tiles" | "width" | "heig
       strength *= SHOPPING_STRENGTH[b.level] ?? 1;
     }
     const target = map[def.coverage.kind];
-    forEachInRadius(i, def.coverage.radius, state.width, state.height, (j, d) => {
+    forEachInRange(i, def.size ?? 1, def.coverage.radius, state.width, state.height, (j, d) => {
       const v = strength * falloff(d, def.coverage!.radius);
       if (v > target[j]) target[j] = v;
     });

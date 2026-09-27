@@ -1,6 +1,6 @@
 // プレイヤーの操作（建設・撤去・税率・融資）。すべて新しい状態を返す純粋関数。
 
-import { BUILDINGS, isRoad } from "./buildings";
+import { BUILDINGS, isRoad, isZone } from "./buildings";
 import { ECONOMY } from "./config";
 import { anchorOf, countBuildings, footprint, isUnlockedTile, toXY } from "./map";
 import { getRank, isBuildingUnlocked, rankIndex } from "./progression";
@@ -122,6 +122,28 @@ export function demolish(state: GameState, i: number): ActionResult {
   return { ok: true, state: draft, message };
 }
 
+/** 建て替え：住宅・商業・工業を、撤去せずに別のゾーンへ変える（空き地に建てるのと同じ費用） */
+export function checkRebuild(state: GameState, i: number, type: BuildingType): PlacementCheck {
+  const b = state.tiles[i]?.building;
+  if (state.gameOver) return { ok: false, cost: 0, reason: "ゲームは終了しています" };
+  if (!b || !isZone(b.type) || !isZone(type)) return { ok: false, cost: 0, reason: "建て替えできるのは住宅・商業・工業だけです" };
+  if (b.type === type) return { ok: false, cost: 0, reason: "同じ種類です" };
+  const cost = buildCost(state, type, i);
+  if (state.money < cost) return { ok: false, cost, reason: `資金が足りません（${yen(cost)} 必要）` };
+  return { ok: true, cost };
+}
+
+export function rebuild(state: GameState, i: number, type: BuildingType): ActionResult {
+  const check = checkRebuild(state, i, type);
+  if (!check.ok) return { ok: false, error: check.reason ?? "建て替えできません" };
+  const draft = structuredClone(state);
+  const from = BUILDINGS[draft.tiles[i].building!.type].name;
+  draft.tiles[i].building = newBuilding(type, 0, draft.turn, check.cost);
+  draft.money -= check.cost;
+  draft.monthSpend += check.cost;
+  return { ok: true, state: draft, message: `${from}を${BUILDINGS[type].name}に建て替え -${yen(check.cost)}` };
+}
+
 /** 埋め立て（水のマスを陸地にする）。大都市で解禁 */
 export function checkReclaim(state: GameState, i: number): PlacementCheck {
   const cost = ECONOMY.reclaimCost;
@@ -146,6 +168,7 @@ export function reclaim(state: GameState, i: number): ActionResult {
 }
 
 export function setTax(state: GameState, zone: ZoneType, rate: number): ActionResult {
+  if (state.gameOver) return { ok: false, error: "ゲームは終了しています" };
   const value = Math.max(ECONOMY.taxMin, Math.min(ECONOMY.taxMax, Math.round(rate)));
   if (state.taxes[zone] === value) return { ok: true, state };
   return { ok: true, state: { ...state, taxes: { ...state.taxes, [zone]: value } } };
@@ -158,16 +181,17 @@ export function loanLimit(state: GameState): number {
 export function borrow(state: GameState, amount: number = ECONOMY.loanStep): ActionResult {
   if (state.gameOver) return { ok: false, error: "ゲームは終了しています" };
   const room = loanLimit(state) - state.loan;
-  if (room <= 0) return { ok: false, error: "融資枠の上限です（ランクアップで拡大）" };
+  if (room <= 0) return { ok: false, error: "借りられる上限です（ランクアップで増えます）" };
   const value = Math.min(amount, room);
   return {
     ok: true,
     state: { ...state, loan: state.loan + value, money: state.money + value },
-    message: `${yen(value)} の融資を受けました（月利${ECONOMY.loanInterest * 100}%）`,
+    message: `${yen(value)} を借りました（月利${ECONOMY.loanInterest * 100}%）`,
   };
 }
 
 export function repay(state: GameState, amount: number = ECONOMY.loanStep): ActionResult {
+  if (state.gameOver) return { ok: false, error: "ゲームは終了しています" };
   if (state.loan <= 0) return { ok: false, error: "返済する借入はありません" };
   const value = Math.min(amount, state.loan);
   if (state.money < value) return { ok: false, error: "資金が足りません" };

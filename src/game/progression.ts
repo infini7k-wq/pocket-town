@@ -34,12 +34,12 @@ export function unlocksForRank(id: RankId): string[] {
   if (prev && rank.maxLevel > prev.maxLevel) {
     out.push(
       rank.maxLevel === 3
-        ? "⬆️ レベル3の建物（🏢 マンション・🏙️ オフィスビル・🏭 工業団地）"
-        : "⬆️ レベル4の超高層（🌇 タワーマンション・🏦 超高層オフィス・🔬 ハイテク工業団地）※公共交通・学校の範囲が必要",
+        ? "⬆️ 3段目の建物（🏢 マンション・🏙️ オフィスビル・🏭 工業団地）"
+        : "⬆️ 4段目の超高層（🌇 タワーマンション・🏦 超高層オフィス・🤖 ハイテク工業団地）。バス停・駅や学校の近くで育つ",
     );
   }
-  if (id === "metropolis") out.push("🌊 埋め立て（海や川を陸地にできる）");
+  if (id === "metropolis") out.push("🏝️ 埋め立て（海や川を陸地にできる）");
   if (prev && rank.mapSize > prev.mapSize) out.push(`🗺️ 建設エリア拡張（${rank.mapSize}×${rank.mapSize}）`);
-  if (prev && rank.loanLimit > prev.loanLimit) out.push(`🏦 融資枠 ¥${rank.loanLimit.toLocaleString("ja-JP")}`);
+  if (prev && rank.loanLimit > prev.loanLimit) out.push(`💳 借りられる上限 ¥${Math.round(rank.loanLimit / 10_000).toLocaleString("ja-JP")}万`);
   return out;
 }

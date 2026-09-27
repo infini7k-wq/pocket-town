@@ -38,14 +38,18 @@ import {
   type CityAnalysis,
   type GameState,
   type MonthReport,
+  type OutflowReason,
   type RankId,
   type ScenarioResult,
   type ZoneType,
 } from "@/game";
 
 export type Tool = BuildingType | "inspect" | "bulldoze" | "reclaim";
-export type Overlay = "none" | "traffic" | "env" | "happiness" | "park" | "education" | "health" | "fire" | "transit";
+export type Overlay = "none" | "traffic" | "env" | "happiness" | "park" | "education" | "health" | "fire" | "transit" | "shopping";
 export type PanelTab = "voices" | "city" | "finance" | "goals";
+
+/** 施設の効果範囲を表す表示モード */
+export const RANGE_OVERLAYS: Overlay[] = ["park", "education", "health", "fire", "transit", "shopping"];
 
 export interface Floater {
   id: number;
@@ -88,6 +92,11 @@ interface GameContextValue {
   /** 任意のアクションを実行する（失敗時はトーストでエラー表示） */
   runAction: (fn: (s: GameState) => ActionResult) => boolean;
   advance: () => void;
+  /** 数か月まとめて進める（イベント・ランクアップ・時代の転換があればそこで止まる） */
+  advanceMany: (months: number) => void;
+  /** 今月の操作を1つ取り消す */
+  undo: () => void;
+  canUndo: boolean;
   changeTax: (zone: ZoneType, rate: number) => void;
   takeLoan: () => void;
   repayLoan: () => void;
@@ -145,6 +154,10 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   const [eraShift, setEraShift] = useState<string | null>(null);
   const [scenarioResult, setScenarioResult] = useState<ScenarioResult | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
+  // 取り消し用：今月の操作の前の状態（月を進めるとリセット）
+  const [undoStack, setUndoStack] = useState<GameState[]>([]);
+  const strokeSnapshot = useRef(false);
+  const saveWarned = useRef(false);
   // ドラッグで連続設置するとき、同じイベントループ内で最新の状態を使うための参照
   const stateRef = useRef<GameState | null>(null);
   const idRef = useRef(0);
@@ -152,17 +165,28 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
 
   const analysis = useMemo(() => (state ? analyzeCity(state) : null), [state]);
 
-  // 自動保存
-  useEffect(() => {
-    if (state) saveGame(state);
-  }, [state]);
-
   const nextId = () => ++idRef.current;
 
   const toast = useCallback((text: string, tone: Toast["tone"] = "info") => {
     const id = ++idRef.current;
     setToasts((t) => [...t.slice(-2), { id, text, tone }]);
-    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 3000);
+    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), tone === "bad" ? 4500 : 3000);
+  }, []);
+
+  // 自動保存（失敗したら一度だけ知らせる。プライベートブラウズや容量不足など）
+  useEffect(() => {
+    if (!state) return;
+    const ok = saveGame(state);
+    if (!ok && !saveWarned.current) {
+      saveWarned.current = true;
+      toast("⚠️ 自動保存できませんでした。プライベートブラウズでは保存されません", "bad");
+    }
+    if (ok) saveWarned.current = false;
+  }, [state, toast]);
+
+  // ブラウザにデータを消さないよう頼む（iPhone の Safari などで長期間遊ぶため）
+  useEffect(() => {
+    void navigator.storage?.persist?.().catch(() => undefined);
   }, []);
 
   /** 状態を反映する。ミッションを達成していれば報酬もここで受け取る */
@@ -194,8 +218,8 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     // 公共施設を選んだら効果範囲を自動表示
     const cov = t !== "inspect" && t !== "bulldoze" && t !== "reclaim" ? BUILDINGS[t].coverage?.kind : undefined;
     setOverlay((o) => {
-      if (cov && cov !== "shopping" && cov !== "plaza" && cov !== "landmark") return cov as Overlay;
-      return ["park", "education", "health", "fire", "transit"].includes(o) ? "none" : o;
+      if (cov && cov !== "plaza" && cov !== "landmark") return cov as Overlay;
+      return RANGE_OVERLAYS.includes(o) ? "none" : o;
     });
   }, []);
 
@@ -216,13 +240,18 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const apply = useCallback(
-    (fn: (s: GameState) => ActionResult, opts: { silent?: boolean } = {}): GameState | null => {
+    (fn: (s: GameState) => ActionResult, opts: { silent?: boolean; stroke?: boolean } = {}): GameState | null => {
       const cur = stateRef.current;
       if (!cur) return null;
       const r = fn(cur);
       if (!r.ok) {
         if (!opts.silent) toast(r.error, "bad");
         return null;
+      }
+      if (r.state !== cur) {
+        // ドラッグでの連続設置は、ひとまとまりで1回の取り消しにする
+        if (!opts.stroke || !strokeSnapshot.current) setUndoStack((u) => [...u.slice(-29), cur]);
+        if (opts.stroke) strokeSnapshot.current = true;
       }
       commit(r.state);
       return r.state;
@@ -244,7 +273,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         if (!b) return;
         if (painting && BUILDINGS[b.type].category !== "zone" && !isRoad(b.type)) return; // 公共施設・大型施設はドラッグでは壊さない
         const before = cur.money;
-        const next = apply((s) => demolish(s, i), { silent: painting && strokeError.current });
+        const next = apply((s) => demolish(s, i), { silent: painting && strokeError.current, stroke: true });
         if (!next) {
           strokeError.current = true;
           return;
@@ -256,7 +285,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       }
       if (tool === "reclaim") {
         if (cur.tiles[i]?.terrain !== "water" || cur.tiles[i]?.building) return;
-        const next = apply((s) => reclaim(s, i), { silent: painting && strokeError.current });
+        const next = apply((s) => reclaim(s, i), { silent: painting && strokeError.current, stroke: true });
         if (!next) {
           strokeError.current = true;
           return;
@@ -269,7 +298,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       const existing = cur.tiles[i]?.building?.type;
       if (painting && existing && !(tool === "avenue" && existing === "road")) return;
       const before = cur.money;
-      const next = apply((s) => placeBuilding(s, tool, i), { silent: painting && strokeError.current });
+      const next = apply((s) => placeBuilding(s, tool, i), { silent: painting && strokeError.current, stroke: true });
       if (!next) {
         strokeError.current = true;
         return;
@@ -281,7 +310,18 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
 
   const endStroke = useCallback(() => {
     strokeError.current = false;
+    strokeSnapshot.current = false;
   }, []);
+
+  const undo = useCallback(() => {
+    const prev = undoStack[undoStack.length - 1];
+    if (!prev) return;
+    setUndoStack((u) => u.slice(0, -1));
+    stateRef.current = prev;
+    setState(prev);
+    setSelected(null);
+    toast("↩️ ひとつ前に戻しました", "info");
+  }, [undoStack, toast]);
 
   const runAction = useCallback((fn: (s: GameState) => ActionResult) => apply(fn) !== null, [apply]);
 
@@ -291,9 +331,9 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       for (const c of report.changes.slice(0, MAX_TILE_FLOATERS)) {
         const b = after.tiles[c.tile].building;
         if (!b) continue;
-        if (c.kind === "levelUp") items.push({ tile: c.tile, text: `⬆ ${levelName(b.type, b.level)}`, tone: "gold" });
-        else if (c.kind === "built") items.push({ tile: c.tile, text: `✨ ${levelName(b.type, b.level)}`, tone: "good" });
-        else if (c.kind === "levelDown") items.push({ tile: c.tile, text: "⬇ 縮小", tone: "bad" });
+        if (c.kind === "levelUp") items.push({ tile: c.tile, text: `⬆️ ${levelName(b.type, b.level)}`, tone: "gold" });
+        else if (c.kind === "built") items.push({ tile: c.tile, text: `🆕 ${levelName(b.type, b.level)}`, tone: "good" });
+        else if (c.kind === "levelDown") items.push({ tile: c.tile, text: "⬇️ 縮小", tone: "bad" });
         else if (c.kind === "abandoned") items.push({ tile: c.tile, text: "🏚️ 空き家に", tone: "bad" });
       }
       // 人口の増減が大きい住宅
@@ -314,6 +354,8 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         `👥 人口 ${formatNumber(pop, { sign: true })}人（転入 ${report.inflow} / 転出 ${report.outflow}）`,
         `💴 収支 ${formatYen(report.budget.net, { sign: true })}`,
       ];
+      const reason = mainOutflowReason(report);
+      if (reason) lines.push(reason);
       const ups = report.changes.filter((c) => c.kind === "levelUp").length;
       const built = report.changes.filter((c) => c.kind === "built").length;
       if (built + ups > 0) lines.push(`🏗️ ${built > 0 ? `完成 ${built}件` : ""}${built > 0 && ups > 0 ? "・" : ""}${ups > 0 ? `成長 ${ups}件` : ""}`);
@@ -351,20 +393,70 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     }
     const out = advanceMonth(cur);
     if (!out) return;
+    setUndoStack([]);
     commit(out.state);
     showMonthFeedback(cur, out.state, out.report);
   }, [commit, showMonthFeedback, toast]);
+
+  const advanceMany = useCallback(
+    (months: number) => {
+      const start = stateRef.current;
+      if (!start) return;
+      if (start.pendingEvent) {
+        toast("先にイベントへの対応を決めてください", "bad");
+        return;
+      }
+      let cur = start;
+      let last: { before: GameState; state: GameState; report: MonthReport } | null = null;
+      let inflow = 0;
+      let outflow = 0;
+      let net = 0;
+      let done = 0;
+      let popStart: number | null = null;
+      for (let k = 0; k < months; k++) {
+        const out = advanceMonth(cur);
+        if (!out) break;
+        last = { before: cur, state: out.state, report: out.report };
+        popStart ??= out.report.populationBefore;
+        inflow += out.report.inflow;
+        outflow += out.report.outflow;
+        net += out.report.budget.net;
+        cur = out.state;
+        done++;
+        // 大事なできごとがあれば、そこで止めて見せる
+        const r = out.report;
+        if (cur.pendingEvent || cur.gameOver || r.rankUp || r.eraChange || r.scenarioResult || r.events.some((e) => e.tone === "bad")) break;
+        // ミッションの報酬は毎月受け取る
+        cur = claimMissions(cur, analyzeCity(cur)).state;
+      }
+      if (!last) return;
+      setUndoStack([]);
+      commit(last.state);
+      showMonthFeedback(last.before, last.state, last.report);
+      if (done > 1) {
+        const pop = last.report.populationAfter - (popStart ?? last.report.populationBefore);
+        const bannerId = nextId();
+        setBanner({
+          id: bannerId,
+          title: `⏩ ${done}か月進めました`,
+          lines: [`👥 人口 ${formatNumber(pop, { sign: true })}人（転入 ${inflow} / 転出 ${outflow}）`, `💴 収支の合計 ${formatYen(net, { sign: true })}`, ...(done < months ? ["⚠️ 大事なできごとがあったので止めました"] : [])],
+        });
+        setTimeout(() => setBanner((b) => (b?.id === bannerId ? null : b)), 3800);
+      }
+    },
+    [commit, showMonthFeedback, toast],
+  );
 
   const changeTax = useCallback((zone: ZoneType, rate: number) => void apply((s) => setTax(s, zone, rate)), [apply]);
 
   const takeLoan = useCallback(() => {
     const next = apply((s) => borrow(s));
-    if (next) toast("🏦 融資を受けました", "good");
+    if (next) toast("💳 お金を借りました", "good");
   }, [apply, toast]);
 
   const repayLoan = useCallback(() => {
     const next = apply((s) => repay(s));
-    if (next) toast("🏦 返済しました", "good");
+    if (next) toast("💳 返済しました", "good");
   }, [apply, toast]);
 
   const chooseEventOption = useCallback(
@@ -376,6 +468,8 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         toast(r.error, "bad");
         return;
       }
+      // イベントの選択は取り消せない（選び直しできないように）
+      setUndoStack([]);
       commit(r.state);
       if (r.message) toast(r.message, "good");
     },
@@ -385,6 +479,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   const newGame = useCallback(
     (name: string, seed: number, scenario?: string) => {
       commit(createNewGame(name, seed, { scenario }));
+      setUndoStack([]);
       setScenarioResult(null);
       setToolState("inspect");
       setSelected(null);
@@ -399,6 +494,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     const saved = loadGame();
     if (!saved) return false;
     commit(saved);
+    setUndoStack([]);
     setToolState("inspect");
     setSelected(null);
     return true;
@@ -437,6 +533,9 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       endStroke,
       runAction,
       advance,
+      advanceMany,
+      undo,
+      canUndo: undoStack.length > 0,
       changeTax,
       takeLoan,
       repayLoan,
@@ -458,10 +557,28 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       helpOpen,
       setHelpOpen,
     }),
-    [state, analysis, tool, setTool, pickTool, selected, flash, focusTile, overlay, panelTab, applyToolAt, endStroke, runAction, advance, changeTax, takeLoan, repayLoan, chooseEventOption, newGame, recordToHall, scenarioResult, continueGame, quitToTitle, floaters, toasts, toast, banner, rankUp, eraShift, helpOpen],
+    [state, analysis, tool, setTool, pickTool, selected, flash, focusTile, overlay, panelTab, applyToolAt, endStroke, runAction, advance, advanceMany, undo, undoStack.length, changeTax, takeLoan, repayLoan, chooseEventOption, newGame, recordToHall, scenarioResult, continueGame, quitToTitle, floaters, toasts, toast, banner, rankUp, eraShift, helpOpen],
   );
 
   return <GameContext.Provider value={value}>{children}</GameContext.Provider>;
+}
+
+const OUTFLOW_TEXT: Record<OutflowReason, string> = {
+  jobless: "仕事がなくて",
+  unhappy: "住みにくくて",
+  churn: "転勤・進学などで",
+  noRoad: "道路がなくて",
+  decline: "建物が縮小・空き家になって",
+  event: "できごとの影響で",
+};
+
+/** 転出の主な理由（ふだんの入れ替わり以外で目立つものがあれば1行で） */
+export function mainOutflowReason(report: MonthReport): string | null {
+  const reasons = report.outflowReasons;
+  if (!reasons) return null;
+  const top = (Object.entries(reasons) as Array<[OutflowReason, number]>).filter(([k]) => k !== "churn").sort((a, b) => b[1] - a[1])[0];
+  if (!top || top[1] < 5 || top[1] < report.outflow * 0.3) return null;
+  return `🚪 ${OUTFLOW_TEXT[top[0]]}${top[1]}人が転出`;
 }
 
 export function rankLabel(id: RankId): string {

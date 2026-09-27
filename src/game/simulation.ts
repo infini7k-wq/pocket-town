@@ -12,7 +12,7 @@ import { BUILDINGS } from "./buildings";
 import { advanceEra } from "./eras";
 import { processRequests } from "./requests";
 import { evaluateScenario } from "./scenarios";
-import { ECONOMY, HISTORY_LIMIT, NEWS_LIMIT } from "./config";
+import { ECONOMY, HISTORY_LIMIT, NEWS_LIMIT, RANKS } from "./config";
 import { rollEvent } from "./events";
 import { checkGoals, getGoal } from "./goals";
 import { applyGrowth } from "./growth";
@@ -21,7 +21,7 @@ import { tickModifiers } from "./modifiers";
 import { migrate } from "./population";
 import { getRank, nextRank, rankForPopulation, rankIndex } from "./progression";
 import { createRng } from "./rng";
-import type { GameState, MonthReport, NewsItem } from "./types";
+import type { GameState, MonthReport, NewsItem, OutflowReason } from "./types";
 import { generateVoices } from "./voices";
 
 export interface MonthOutcome {
@@ -85,14 +85,16 @@ export function advanceMonth(state: GameState, options: { forceEvent?: string } 
   let rankUp: MonthReport["rankUp"] = null;
   const reached = rankForPopulation(populationAfter);
   if (rankIndex(reached.id) > rankIndex(draft.rank)) {
+    // 一気に複数ランク上がったときは、飛ばしたランクのお祝い金もまとめて渡す
+    const reward = RANKS.slice(rankIndex(draft.rank) + 1, rankIndex(reached.id) + 1).reduce((sum, r) => sum + r.reward, 0);
     draft.rank = reached.id;
-    draft.money += reached.reward;
+    draft.money += reward;
     rankUp = reached.id;
     const item: NewsItem = {
       turn: draft.turn,
       emoji: reached.emoji,
       title: `「${reached.name}」にランクアップ！`,
-      body: `人口が${reached.minPopulation.toLocaleString("ja-JP")}人を突破しました。お祝い金 ¥${reached.reward.toLocaleString("ja-JP")}`,
+      body: `人口が${reached.minPopulation.toLocaleString("ja-JP")}人を突破しました。お祝い金 ¥${reward.toLocaleString("ja-JP")}`,
       tone: "good",
     };
     draft.news = [item, ...draft.news].slice(0, NEWS_LIMIT);
@@ -128,6 +130,9 @@ export function advanceMonth(state: GameState, options: { forceEvent?: string } 
   const diff = populationAfter - populationBefore - (inflow - outflow);
   if (diff > 0) inflow += diff;
   else outflow -= diff;
+  const outflowReasons: Partial<Record<OutflowReason, number>> = { ...migration.reasons };
+  if (growth.movedOut > 0) outflowReasons.decline = growth.movedOut;
+  if (diff < 0) outflowReasons.event = -diff;
 
   const report: MonthReport = {
     turn: state.turn,
@@ -143,6 +148,7 @@ export function advanceMonth(state: GameState, options: { forceEvent?: string } 
     achievements,
     eraChange,
     scenarioResult,
+    outflowReasons,
   };
 
   draft.turn += 1;
@@ -152,7 +158,7 @@ export function advanceMonth(state: GameState, options: { forceEvent?: string } 
     ...draft.history,
     { turn: draft.turn, population: populationAfter, money: draft.money, happiness: final.cityHappiness, net: budget.net },
   ].slice(-HISTORY_LIMIT);
-  draft.voices = generateVoices(draft, final, rng, report);
+  draft.voices = generateVoices(draft, final, rng, report, state.voices);
   draft.rngSeed = rng.seed;
   return { state: draft, report };
 }

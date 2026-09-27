@@ -37,7 +37,7 @@ const level = (v: number, good: number, warn: number): Status => (v >= good ? "g
 
 export function TopBar() {
   const { state, analysis: a } = useCity();
-  const { advance, setPanelTab, setOverlay, setHelpOpen } = useGame();
+  const { advance, advanceMany, undo, canUndo, setPanelTab, setOverlay, setHelpOpen } = useGame();
   const rank = getRank(state.rank);
   const next = nextRank(state.rank);
   const progress = rankProgress(state);
@@ -60,7 +60,7 @@ export function TopBar() {
   }, []);
 
   return (
-    <header ref={headerRef} className="sticky top-0 z-40 border-b border-white/60 bg-sky-100/85 backdrop-blur-md">
+    <header ref={headerRef} className="sticky top-0 z-40 border-b border-white/60 bg-sky-100/85 pt-[env(safe-area-inset-top)] backdrop-blur-md">
       <div className="mx-auto flex max-w-[1400px] flex-col gap-2 px-3 py-2 lg:px-5 xl:flex-row xl:items-center xl:gap-4">
         {/* 町名・ランク */}
         <div className="flex items-center gap-2 xl:w-60 xl:shrink-0">
@@ -135,6 +135,14 @@ export function TopBar() {
             </div>
             <button type="button" onClick={() => setHelpOpen(true)} className="text-[11px] font-bold text-blue-600 hover:underline">
               ？ 遊び方
+            </button>
+          </div>
+          <div className="flex flex-col gap-1">
+            <button type="button" onClick={undo} disabled={!canUndo} title="今月の操作をひとつ取り消す（⌘Z / Ctrl+Z）" className="rounded-lg bg-white/80 px-2 py-0.5 text-[11px] font-black text-slate-600 hover:bg-white disabled:opacity-35">
+              ↩️ 戻す
+            </button>
+            <button type="button" onClick={() => advanceMany(3)} title="3か月まとめて進める（大事なできごとがあれば止まる）" className="rounded-lg bg-orange-100 px-2 py-0.5 text-[11px] font-black text-orange-700 hover:bg-orange-200">
+              ⏩ 3か月
             </button>
           </div>
           <NextMonthButton onClick={advance} />

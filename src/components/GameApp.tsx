@@ -5,7 +5,7 @@ import { BuildMenu, BuildPalette, useTools } from "./BuildMenu";
 import { GameProvider, useGame } from "./GameProvider";
 import { CityMap } from "./map/CityMap";
 import { EraModal, EventModal, GameOverModal, HelpModal, RankUpModal, ScenarioResultModal, Toasts } from "./Modals";
-import { SidePanel } from "./SidePanel";
+import { AdviceStrip, SidePanel } from "./SidePanel";
 import { StartScreen } from "./StartScreen";
 import { TileInfo } from "./TileInfo";
 import { TopBar } from "./TopBar";
@@ -37,12 +37,18 @@ function Screens() {
 }
 
 function useShortcuts() {
-  const { setTool, advance, state, rankUp, helpOpen, setHelpOpen, closeRankUp, eraShift, closeEraShift, scenarioResult, closeScenarioResult } = useGame();
+  const { setTool, advance, undo, state, rankUp, helpOpen, setHelpOpen, closeRankUp, eraShift, closeEraShift, scenarioResult, closeScenarioResult } = useGame();
   const tools = useTools();
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
-      if (target.closest("input, textarea, select") || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (target.closest("input, textarea, select")) return;
+      if ((e.metaKey || e.ctrlKey) && (e.key === "z" || e.key === "Z") && !e.shiftKey) {
+        e.preventDefault();
+        undo();
+        return;
+      }
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
       if (e.key === "Escape" && (helpOpen || rankUp || eraShift || scenarioResult)) {
         setHelpOpen(false);
         closeRankUp();
@@ -68,20 +74,21 @@ function useShortcuts() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [setTool, advance, tools, state?.pendingEvent, rankUp, helpOpen, setHelpOpen, closeRankUp, eraShift, closeEraShift, scenarioResult, closeScenarioResult]);
+  }, [setTool, advance, undo, tools, state?.pendingEvent, rankUp, helpOpen, setHelpOpen, closeRankUp, eraShift, closeEraShift, scenarioResult, closeScenarioResult]);
 }
 
 function GameScreen() {
   const { selected, select, quitToTitle, setHelpOpen } = useGame();
   useShortcuts();
   return (
-    <div className="min-h-dvh pb-32 lg:pb-8">
+    <div className="min-h-dvh pb-44 lg:pb-8">
       <TopBar />
       <main className="mx-auto max-w-[1680px] px-3 pt-3 lg:grid lg:grid-cols-[auto_minmax(0,1fr)_300px] xl:grid-cols-[auto_minmax(0,1fr)_340px] lg:gap-4 lg:px-4">
         <div className="hidden lg:block">
           <BuildPalette />
         </div>
         <div className="flex flex-col gap-3 lg:sticky lg:self-start" style={{ top: "calc(var(--header-h, 80px) + 12px)" }}>
+          <AdviceStrip />
           <CityMap />
           <BuildMenu />
         </div>
@@ -105,7 +112,7 @@ function GameScreen() {
 
       {/* スマホ：選択したマスの詳細はボトムシートで */}
       {selected !== null && (
-        <div className="animate-sheet-in fixed inset-x-2 bottom-[104px] z-40 max-h-[46dvh] overflow-y-auto rounded-3xl bg-white p-4 shadow-2xl ring-1 ring-slate-900/10 lg:hidden">
+        <div className="animate-sheet-in fixed inset-x-2 bottom-[calc(150px+env(safe-area-inset-bottom))] z-40 max-h-[42dvh] overflow-y-auto rounded-3xl bg-white p-4 shadow-2xl ring-1 ring-slate-900/10 lg:hidden">
           <TileInfo onClose={() => select(null)} />
         </div>
       )}

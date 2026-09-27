@@ -21,16 +21,16 @@ export const ERA_DEFS: EraDef[] = [
   {
     id: "growth",
     name: "高度成長",
-    emoji: "🏗️",
+    emoji: "🏭",
     description: "工場の注文が多く、仕事をつくりやすい時代。",
-    tips: ["工業を増やして雇用を確保しよう", "工場は住宅から離して騒音に注意"],
+    tips: ["工業を増やして働く場所をつくろう", "工場は住宅から3マス以上はなそう"],
     effects: { indDemand: 0.2, comDemand: 0.05 },
     weight: 0.6,
   },
   {
     id: "postIndustrial",
     name: "脱工業化",
-    emoji: "🏢",
+    emoji: "🔄",
     description: "工場の注文が激減し、オフィスやお店が求められる時代。古い工場は衰退しやすい。",
     tips: ["工場を減らし、商業（オフィス）に建て替えよう", "工場のあった場所を公園にすると環境もよくなる"],
     effects: { indDemand: -0.4, comDemand: 0.3, envWeight: 0.4 },
@@ -40,7 +40,7 @@ export const ERA_DEFS: EraDef[] = [
     id: "digital",
     name: "IT革命",
     emoji: "💻",
-    description: "オフィス需要が急増し、学校の近くの住宅が大人気になる時代。",
+    description: "オフィスが求められ、学校の近くの住宅が大人気になる時代。",
     tips: ["商業を増やしてオフィス街をつくろう", "学校・大学の範囲を広げると住宅が育つ"],
     effects: { comDemand: 0.35, eduWeight: 0.8, resAppeal: 0.02 },
     weight: 1,
@@ -49,14 +49,14 @@ export const ERA_DEFS: EraDef[] = [
     id: "aging",
     name: "高齢化",
     emoji: "👴",
-    description: "病院の重要性が増し、転入が減る時代。税収も少し下がる。",
+    description: "病院の大切さが増し、引っ越してくる人が減る時代。税収も少し下がる。",
     tips: ["病院の範囲を街全体に広げよう", "公共交通で暮らしやすく"],
     effects: { healthWeight: 0.8, resAppeal: -0.05, taxIncome: -0.06 },
     weight: 1,
   },
   {
     id: "green",
-    name: "環境の時代",
+    name: "エコ",
     emoji: "🌿",
     description: "空気のきれいな場所が人気になり、工場の近くは嫌われる時代。",
     tips: ["公園を増やし、工場を住宅から遠ざけよう", "ソーラーパネルなど環境のイベントに乗ろう"],
@@ -66,7 +66,7 @@ export const ERA_DEFS: EraDef[] = [
   {
     id: "tourism",
     name: "観光ブーム",
-    emoji: "🗺️",
+    emoji: "📸",
     description: "観光客が押し寄せ、商業が潤う時代。公園や広場のある街が人気。",
     tips: ["商業と広場を増やそう", "スタジアムやテーマパークが大活躍"],
     effects: { comDemand: 0.2, parkWeight: 0.3, resAppeal: 0.03 },
@@ -74,7 +74,7 @@ export const ERA_DEFS: EraDef[] = [
   },
   {
     id: "babyBoom",
-    name: "子育ての時代",
+    name: "子育てブーム",
     emoji: "👶",
     description: "若い家族が増え、住宅・学校・公園が求められる時代。",
     tips: ["住宅を増やして受け入れよう", "学校と公園の範囲を広げよう"],
@@ -130,13 +130,13 @@ export function monthsToNextEra(state: Pick<GameState, "era" | "turn">): number 
 export function describeEffects(fx: ModifierEffects): string[] {
   const pct = (v: number) => `${v > 0 ? "+" : ""}${Math.round(v * 100)}%`;
   const out: string[] = [];
-  if (fx.indDemand) out.push(`工業の需要 ${pct(fx.indDemand)}`);
-  if (fx.comDemand) out.push(`商業の需要 ${pct(fx.comDemand)}`);
-  if (fx.resAppeal) out.push(fx.resAppeal > 0 ? "転入しやすくなる" : "転入しにくくなる");
+  if (fx.indDemand) out.push(`工場の注文 ${pct(fx.indDemand)}`);
+  if (fx.comDemand) out.push(`お店の客 ${pct(fx.comDemand)}`);
+  if (fx.resAppeal) out.push(fx.resAppeal > 0 ? "引っ越してくる人が増える" : "引っ越してくる人が減る");
   if (fx.taxIncome) out.push(`税収 ${pct(fx.taxIncome)}`);
   if (fx.eduWeight) out.push(`学校の効果 ${pct(fx.eduWeight)}`);
   if (fx.healthWeight) out.push(`病院の効果 ${pct(fx.healthWeight)}`);
-  if (fx.envWeight) out.push(`環境の影響 ${pct(fx.envWeight)}`);
+  if (fx.envWeight) out.push(`空気のきれいさの影響 ${pct(fx.envWeight)}`);
   if (fx.parkWeight) out.push(`公園の効果 ${pct(fx.parkWeight)}`);
   return out;
 }

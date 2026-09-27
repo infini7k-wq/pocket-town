@@ -3,7 +3,7 @@
 import { BUILDINGS } from "./buildings";
 import { ENVIRONMENT, INDUSTRIAL_NOISE } from "./config";
 import type { CoverageMap } from "./coverage";
-import { forEachInRadius } from "./map";
+import { forEachInRadius, forEachInRange } from "./map";
 import type { Effects } from "./modifiers";
 import type { TrafficResult } from "./traffic";
 import type { GameState } from "./types";
@@ -23,7 +23,7 @@ export function computeEnvironment(state: GameState, coverage: CoverageMap, traf
     const extra = b && b.level > 0 ? BUILDINGS[b.type].pollution : undefined;
     if ((b?.type === "industrial" && !b.abandoned && b.level > 0) || extra) {
       const p = extra ?? ENVIRONMENT.industrialPollution[b!.level] ?? 0;
-      forEachInRadius(i, ENVIRONMENT.pollutionRadius, width, height, (j, d) => {
+      forEachInRange(i, BUILDINGS[b!.type].size ?? 1, ENVIRONMENT.pollutionRadius, width, height, (j, d) => {
         pollution[j] += p * (POLLUTION_FALLOFF[Math.round(d)] ?? 0);
       });
     }
@@ -62,7 +62,7 @@ export function computeNoise(state: GameState, fx: Effects): number[] {
     const loud = BUILDINGS[b.type].noise;
     if (loud) {
       // 空港などの大型施設：周囲3マスに大きな騒音
-      forEachInRadius(i, 3, width, height, (j, d) => {
+      forEachInRange(i, BUILDINGS[b.type].size ?? 1, 3, width, height, (j, d) => {
         if (state.tiles[j].building?.anchor === i || j === i) return;
         noise[j] += d <= 2 ? loud : loud / 2;
       });

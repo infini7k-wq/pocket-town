@@ -24,6 +24,10 @@ export interface TileViewProps {
   preview?: "ok" | "bad";
   previewEmoji?: string;
   inRange: boolean;
+  /** 効果範囲の境界線（上=1, 右=2, 下=4, 左=8） */
+  rangeEdge?: number;
+  /** 範囲表示中の住宅：効果が届いているか */
+  covMark?: "in" | "out";
   /** もうすぐ次のレベルに育つ */
   soon?: boolean;
   /** 2×2 の大型施設の本体 */
@@ -35,7 +39,14 @@ export interface TileViewProps {
 const ZONE_PLATE: Record<string, string[]> = {
   residential: ["#e8f5e0", "#c9ebbd", "#a6dc94", "#86cc72", "#5fb54a"],
   commercial: ["#e3effc", "#c6def9", "#9fc6f2", "#78aeea", "#4f8fdc"],
-  industrial: ["#fbf0d6", "#f5deaa", "#ecc97a", "#e0b050", "#9ccfd8"],
+  industrial: ["#fbf0d6", "#f5deaa", "#ecc97a", "#e0b050", "#d4943a"],
+};
+
+/** 造成中（レベル0）の点線の色：ゾーンの色に合わせる */
+const ZONE_DASH: Record<string, string> = {
+  residential: "border-emerald-500/80",
+  commercial: "border-blue-500/80",
+  industrial: "border-amber-500/80",
 };
 
 /** レベルごとの絵文字の大きさ（マスに対する割合）。小さいマスでは全体に大きめにする */
@@ -79,7 +90,7 @@ function Sprite({ type, level, abandoned, size }: { type: BuildingType; level: n
   return (
     <>
       <div
-        className={cx("absolute rounded-[22%]", small ? "inset-[4%]" : "inset-[7%]", level === 0 && zone && "border-2 border-dashed border-slate-400/70")}
+        className={cx("absolute rounded-[22%]", small ? "inset-[4%]" : "inset-[7%]", level === 0 && zone && cx("border-2 border-dashed", ZONE_DASH[type]))}
         style={{
           background: plate,
           boxShadow: `0 ${height}px 0 ${zone ? "rgba(0,0,0,0.18)" : def.color + "cc"}`,
@@ -165,7 +176,29 @@ function TileViewImpl(p: TileViewProps) {
 
       {p.overlay && <div className="pointer-events-none absolute inset-0" style={{ background: p.overlay }} />}
       {p.dim && <div className="pointer-events-none absolute inset-0 bg-slate-900/30" />}
-      {p.inRange && <div className="pointer-events-none absolute inset-0 bg-sky-400/30 ring-1 ring-inset ring-sky-500/40" />}
+      {p.inRange && <div className="pointer-events-none absolute inset-0 bg-violet-400/30" />}
+      {p.rangeEdge ? (
+        <div
+          className="pointer-events-none absolute inset-0 z-[4]"
+          style={{
+            borderColor: p.inRange ? "#7c3aed" : "#1d4ed8",
+            borderStyle: "solid",
+            borderTopWidth: p.rangeEdge & 1 ? 2 : 0,
+            borderRightWidth: p.rangeEdge & 2 ? 2 : 0,
+            borderBottomWidth: p.rangeEdge & 4 ? 2 : 0,
+            borderLeftWidth: p.rangeEdge & 8 ? 2 : 0,
+          }}
+        />
+      ) : null}
+      {p.covMark && s >= 14 && (
+        <span
+          className={cx("absolute left-0 top-0 z-[6] flex items-center justify-center rounded-full font-black leading-none text-white shadow ring-1 ring-white", p.covMark === "in" ? "bg-emerald-500" : "bg-slate-400")}
+          style={{ width: Math.max(10, s * 0.34), height: Math.max(10, s * 0.34), fontSize: Math.max(7, s * 0.22) }}
+          aria-label={p.covMark === "in" ? "効果が届いている" : "効果が届いていない"}
+        >
+          {p.covMark === "in" ? "✓" : "✗"}
+        </span>
+      )}
 
       {p.badge && (
         <span

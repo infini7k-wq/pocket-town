@@ -35,27 +35,27 @@ export function nextLevelChecks(state: GameState, i: number, a: CityAnalysis): G
     const cap = effectiveCapacity(state, i, a.net);
     const occ = cap > 0 ? b.occupants / cap : 0;
     if (b.level === 1) {
-      checks.push({ label: `満足度 55 以上（現在 ${Math.round(a.happiness[i])}）`, ok: a.happiness[i] >= 55 });
-      checks.push({ label: `入居率 80% 以上（現在 ${pct(occ)}）`, ok: occ >= 0.8 });
+      checks.push({ label: `満足度 55以上（いま ${Math.round(a.happiness[i])}）`, ok: a.happiness[i] >= 55 });
+      checks.push({ label: `住んでいる割合 80%以上（いま ${pct(occ)}）`, ok: occ >= 0.8 });
     } else if (b.level === 3) {
       // タワーマンション：公共交通で通勤でき、住みやすい場所
-      checks.push({ label: `満足度 70 以上（現在 ${Math.round(a.happiness[i])}）`, ok: a.happiness[i] >= 70 });
+      checks.push({ label: `満足度 70以上（いま ${Math.round(a.happiness[i])}）`, ok: a.happiness[i] >= 70 });
       checks.push({ label: "バス停・駅の範囲内", ok: a.coverage.transit[i] > 0 });
-      checks.push({ label: `環境 50 以上（現在 ${Math.round(a.env[i])}）`, ok: a.env[i] >= 50 });
-      checks.push({ label: `入居率 90% 以上（現在 ${pct(occ)}）`, ok: occ >= 0.9 });
+      checks.push({ label: `環境 50以上（いま ${Math.round(a.env[i])}）`, ok: a.env[i] >= 50 });
+      checks.push({ label: `住んでいる割合 90%以上（いま ${pct(occ)}）`, ok: occ >= 0.9 });
     } else {
-      checks.push({ label: `満足度 65 以上（現在 ${Math.round(a.happiness[i])}）`, ok: a.happiness[i] >= 65 });
+      checks.push({ label: `満足度 65以上（いま ${Math.round(a.happiness[i])}）`, ok: a.happiness[i] >= 65 });
       checks.push({ label: "学校の範囲内", ok: a.coverage.education[i] > 0 });
-      checks.push({ label: `環境 45 以上（現在 ${Math.round(a.env[i])}）`, ok: a.env[i] >= 45 });
-      checks.push({ label: `入居率 85% 以上（現在 ${pct(occ)}）`, ok: occ >= 0.85 });
+      checks.push({ label: `環境 45以上（いま ${Math.round(a.env[i])}）`, ok: a.env[i] >= 45 });
+      checks.push({ label: `住んでいる割合 85%以上（いま ${pct(occ)}）`, ok: occ >= 0.85 });
     }
   } else {
     const eff = b.type === "commercial" ? emp.comEfficiency : emp.indEfficiency;
-    const what = b.type === "commercial" ? "お客さん（商業需要）" : "注文（工業需要）";
+    const what = b.type === "commercial" ? "お客さん" : "工場の注文";
     const needEff = b.level === 1 ? 0.9 : 0.95;
     const needFill = b.level === 1 ? 0.85 : 0.9;
-    checks.push({ label: `${what}が十分（${pct(eff)} / ${pct(needEff)}）`, ok: eff >= needEff });
-    checks.push({ label: `働き手が足りている（${pct(emp.jobFillRate)} / ${pct(needFill)}）`, ok: emp.jobFillRate >= needFill });
+    checks.push({ label: `${what}が十分：${pct(needEff)}以上（いま ${pct(eff)}）`, ok: eff >= needEff });
+    checks.push({ label: `働き手が足りている：${pct(needFill)}以上（いま ${pct(emp.jobFillRate)}）`, ok: emp.jobFillRate >= needFill });
     if (b.level >= 2) checks.push({ label: "前の道路が渋滞していない", ok: trafficOk });
     if (b.level === 3 && b.type === "commercial") checks.push({ label: "バス停・駅の範囲内（通勤客が来られる）", ok: a.coverage.transit[i] > 0 });
     if (b.level === 3 && b.type === "industrial") checks.push({ label: "学校・大学の範囲内（技術者が集まる）", ok: a.coverage.education[i] > 0 });

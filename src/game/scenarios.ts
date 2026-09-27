@@ -41,13 +41,19 @@ export const SCENARIOS: ScenarioDef[] = [
     title: "借金からの再建",
     emoji: "💸",
     story: "前の町長が残したのは、上限いっぱいの借金と空っぽの金庫。このままでは財政破綻してしまう。",
-    goal: "6年以内に借入を完済し、資金 ¥3,000,000 をためる",
-    years: 6,
+    goal: "5年以内に借入を完済し、資金 ¥4,000,000 をためる",
+    years: 5,
     setup: (s) => {
-      s.money = 300_000;
+      s.money = 200_000;
       s.loan = 2_000_000;
+      // 税収の要だった商店が1軒つぶれている
+      const shop = s.tiles.find((t) => t.building?.type === "commercial");
+      if (shop?.building) {
+        shop.building.abandoned = true;
+        shop.building.growth = -40;
+      }
     },
-    progress: (s) => 0.5 * clamp01(1 - s.loan / 2_000_000) + 0.5 * (s.loan === 0 ? clamp01(s.money / 3_000_000) : 0),
+    progress: (s) => 0.5 * clamp01(1 - s.loan / 2_000_000) + 0.5 * (s.loan === 0 ? clamp01(s.money / 4_000_000) : 0),
   },
   {
     id: "depopulated",

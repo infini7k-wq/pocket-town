@@ -15,6 +15,7 @@ export * from "./analysis";
 export * from "./growth";
 export * from "./events";
 export * from "./voices";
+export * from "./advice";
 export * from "./goals";
 export * from "./eras";
 export * from "./requests";

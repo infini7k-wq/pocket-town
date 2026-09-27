@@ -49,6 +49,33 @@ export function forEachInRadius(
   }
 }
 
+/**
+ * 建物の効果範囲をたどる。距離は建物の「端」から測る（2×2 の施設は4マスのどこからでも r マス）。
+ * dist は建物からのマス距離（建物自身のマスは 0）。
+ */
+export function forEachInRange(
+  i: number,
+  size: number,
+  r: number,
+  width: number,
+  height: number,
+  cb: (j: number, dist: number) => void,
+): void {
+  if (size <= 1) return forEachInRadius(i, r, width, height, cb);
+  const { x, y } = toXY(i, width);
+  const x1 = x + size - 1;
+  const y1 = y + size - 1;
+  const limit = r + 0.5;
+  for (let ny = Math.max(0, y - r); ny <= Math.min(height - 1, y1 + r); ny++) {
+    const dy = ny < y ? y - ny : ny > y1 ? ny - y1 : 0;
+    for (let nx = Math.max(0, x - r); nx <= Math.min(width - 1, x1 + r); nx++) {
+      const dx = nx < x ? x - nx : nx > x1 ? nx - x1 : 0;
+      const d = Math.sqrt(dx * dx + dy * dy);
+      if (d <= limit) cb(ny * width + nx, d);
+    }
+  }
+}
+
 /** 現在のランクで建設できる範囲（両端を含む） */
 export function buildableBounds(state: Pick<GameState, "rank" | "width">): Bounds {
   const size = Math.min(getRank(state.rank).mapSize, state.width);

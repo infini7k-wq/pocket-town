@@ -118,6 +118,8 @@ export interface PendingEvent {
   turn: number;
   /** イベントの対象マス（あれば） */
   tile?: number;
+  /** 対象マスの建物の種類（撤去・建て替えで別の建物になったら無効にする） */
+  targetType?: BuildingType;
 }
 
 export type Tone = "good" | "bad" | "neutral";
@@ -167,11 +169,16 @@ export interface TileChange {
   level: number;
 }
 
+/** 転出の理由（月の結果に「なぜ減ったか」を出すため） */
+export type OutflowReason = "jobless" | "unhappy" | "churn" | "noRoad" | "decline" | "event";
+
 export interface MonthReport {
   /** 決算した月（進行前の turn） */
   turn: number;
   inflow: number;
   outflow: number;
+  /** 転出の理由ごとの人数（古いセーブにはない） */
+  outflowReasons?: Partial<Record<OutflowReason, number>>;
   populationBefore: number;
   populationAfter: number;
   budget: BudgetBreakdown;

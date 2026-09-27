@@ -30,7 +30,13 @@ function isValid(data: unknown): data is GameState {
     typeof d.width === "number" &&
     typeof d.height === "number" &&
     Array.isArray(d.tiles) &&
-    d.tiles.length === d.width * d.height
+    d.tiles.length === d.width * d.height &&
+    typeof d.rank === "string" &&
+    !!d.taxes &&
+    typeof d.taxes === "object" &&
+    !!d.profile &&
+    typeof d.profile === "object" &&
+    d.tiles.every((t) => !!t && typeof t === "object" && typeof (t as Tile).terrain === "string")
   );
 }
 
@@ -117,10 +123,23 @@ export function parseSave(raw: string | null): GameState | null {
   }
 }
 
+/** 読めないセーブデータ（未来のバージョンなど）を上書きする前に退避しておく場所 */
+export const BACKUP_KEY = "pocket-town/save-backup";
+let checkedExisting = false;
+
+/** 保存済みのデータが読めない場合、上書きで消えないよう別の場所へ退避する（1セッションに1回） */
+function backupUnreadable(st: Storage) {
+  if (checkedExisting) return;
+  checkedExisting = true;
+  const raw = st.getItem(SAVE_KEY);
+  if (raw && !parseSave(raw)) st.setItem(BACKUP_KEY, raw);
+}
+
 export function saveGame(state: GameState): boolean {
   const st = storage();
   if (!st) return false;
   try {
+    backupUnreadable(st);
     st.setItem(SAVE_KEY, serialize(state));
     return true;
   } catch {
@@ -130,6 +149,12 @@ export function saveGame(state: GameState): boolean {
 
 export function loadGame(): GameState | null {
   return parseSave(storage()?.getItem(SAVE_KEY) ?? null);
+}
+
+/** セーブデータはあるのに読めない（壊れている・新しいバージョンで保存された）とき true */
+export function hasUnreadableSave(): boolean {
+  const raw = storage()?.getItem(SAVE_KEY) ?? null;
+  return !!raw && !parseSave(raw);
 }
 
 export function clearSave(): void {

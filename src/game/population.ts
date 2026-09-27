@@ -9,7 +9,7 @@ import type { Effects } from "./modifiers";
 import type { Rng } from "./rng";
 import type { RoadNetwork } from "./roads";
 import { adjacentTraffic, type TrafficLevel } from "./traffic";
-import type { GameState, TendencyId } from "./types";
+import type { GameState, OutflowReason, TendencyId } from "./types";
 
 export interface HappinessContext {
   net: RoadNetwork;
@@ -154,12 +154,15 @@ export function unemploymentOutflow(ctx: MigrationContext): number {
 export interface MigrationResult {
   inflow: number;
   outflow: number;
+  /** 転出の理由ごとの人数（合計は outflow とおおよそ一致） */
+  reasons: Partial<Record<OutflowReason, number>>;
 }
 
 /** 転入・転出を反映する（draft を直接更新する） */
 export function migrate(draft: GameState, ctx: MigrationContext, rng: Rng): MigrationResult {
   let inflow = 0;
   let outflow = 0;
+  const reasons: Record<"jobless" | "unhappy" | "churn" | "noRoad", number> = { jobless: 0, unhappy: 0, churn: 0, noRoad: 0 };
   const pop = ctx.employment.population;
   const homes: Array<{ i: number; cap: number; target: number }> = [];
   let weighted = 0;
@@ -170,6 +173,7 @@ export function migrate(draft: GameState, ctx: MigrationContext, rng: Rng): Migr
     if (cap === 0) {
       // 住めない住宅からは全員が出ていく
       outflow += b.occupants;
+      reasons.noRoad += b.occupants;
       b.occupants = 0;
       return;
     }
@@ -191,12 +195,14 @@ export function migrate(draft: GameState, ctx: MigrationContext, rng: Rng): Migr
 
   homes.forEach((h, k) => {
     const b = draft.tiles[h.i].building!;
-    const churnRate = POPULATION.churnBase + Math.max(0, 50 - ctx.happiness[h.i]) / 1000 + jobless;
+    const unhappyRate = Math.max(0, 50 - ctx.happiness[h.i]) / 1000;
+    const churnRate = POPULATION.churnBase + unhappyRate + jobless;
     const churn = Math.round(b.occupants * churnRate * (0.6 + rng.next() * 0.8));
     let moveIn = Math.round(gaps[k] * fill * (0.7 + rng.next() * 0.3));
     let moveOut = churn;
-    // 目標を超えている住宅からは少しずつ出ていく
-    if (b.occupants - churn > h.target) moveOut += Math.round((b.occupants - churn - h.target) * POPULATION.leaveRate);
+    // 目標を超えている住宅からは少しずつ出ていく（住みにくさが理由）
+    const overTarget = b.occupants - churn > h.target ? Math.round((b.occupants - churn - h.target) * POPULATION.leaveRate) : 0;
+    moveOut += overTarget;
     // 入れ替わりで空いた分は、住みやすければ埋まる
     if (gaps[k] > 0) moveIn += Math.round(Math.min(churn, gaps[k]) * fill);
     const occ = clamp(b.occupants + moveIn - moveOut, 0, Math.floor(h.cap));
@@ -207,6 +213,16 @@ export function migrate(draft: GameState, ctx: MigrationContext, rng: Rng): Migr
     inflow += moveIn;
     outflow += moveOut;
     b.occupants = occ;
+    // 転出の理由を、それぞれの要因の大きさで按分する
+    const raw = { jobless: churn * (jobless / churnRate), unhappy: churn * (unhappyRate / churnRate) + overTarget, churn: churn * (POPULATION.churnBase / churnRate) };
+    const rawTotal = raw.jobless + raw.unhappy + raw.churn;
+    if (rawTotal > 0 && moveOut > 0) {
+      reasons.jobless += (raw.jobless / rawTotal) * moveOut;
+      reasons.unhappy += (raw.unhappy / rawTotal) * moveOut;
+      reasons.churn += (raw.churn / rawTotal) * moveOut;
+    }
   });
-  return { inflow, outflow };
+  const rounded: Partial<Record<OutflowReason, number>> = {};
+  for (const [k, v] of Object.entries(reasons)) if (Math.round(v) > 0) rounded[k as OutflowReason] = Math.round(v);
+  return { inflow, outflow, reasons: rounded };
 }

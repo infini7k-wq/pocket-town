@@ -3,7 +3,7 @@
 import type { CityAnalysis } from "./analysis";
 import { BUILDINGS, capacityAt, isRoad, isZone } from "./buildings";
 import { EVENTS, NEWS_LIMIT } from "./config";
-import { countBuildings } from "./map";
+import { countBuildings, population } from "./map";
 import { addModifier } from "./modifiers";
 import { getRank, rankIndex } from "./progression";
 import type { Rng } from "./rng";
@@ -44,6 +44,12 @@ export interface EventDef {
 
 const yen = (v: number) => `¥${Math.round(v).toLocaleString("ja-JP")}`;
 const monthOf = (turn: number) => ((turn + 3) % 12) + 1;
+
+/** 選択式イベントの費用・報酬を街の規模に比例させる（大きな街でも判断に重みが出るように） */
+export function scaledCost(s: GameState, base: number): number {
+  const factor = Math.max(1, Math.min(12, population(s) / 1000));
+  return Math.round((base * factor) / 10_000) * 10_000;
+}
 
 function modify(s: GameState, id: string, label: string, emoji: string, turns: number, effects: ModifierEffects) {
   s.modifiers = addModifier(s.modifiers, { id, label, emoji, turnsLeft: turns, effects });
@@ -107,13 +113,13 @@ export const EVENT_DEFS: EventDef[] = [
     id: "localCompany",
     eras: ["growth"],
     title: "地元企業が進出",
-    emoji: "🏢",
+    emoji: "🔧",
     tone: "good",
-    message: () => "地元の企業がこの町に拠点を構えることになりました。工場や店の需要が高まります。",
+    message: () => "地元の企業がこの街に拠点を構えることになりました。工場の注文とお店の客が増えます。",
     weight: ({ a }) => (a.population > 200 ? 1 : 0),
     apply: ({ state }) => {
-      modify(state, "localCompany", "地元企業の進出", "🏢", 6, { indDemand: 0.35, comDemand: 0.1 });
-      return "6か月間、工業需要 +35%・商業需要 +10%";
+      modify(state, "localCompany", "地元企業の進出", "🔧", 6, { indDemand: 0.35, comDemand: 0.1 });
+      return "工場の注文 +35%・お店の客 +10%（6か月）";
     },
   },
   {
@@ -133,7 +139,7 @@ export const EVENT_DEFS: EventDef[] = [
       b.level += 1;
       b.growth = 0;
       modify(state, "popularShop", "人気店のにぎわい", "🍰", 3, { happiness: 3 });
-      return `お店がレベル${b.level}に成長！3か月間、満足度 +3`;
+      return `お店がレベル${b.level}に成長！満足度 +3（3か月）`;
     },
   },
   {
@@ -141,11 +147,11 @@ export const EVENT_DEFS: EventDef[] = [
     title: "学校が高評価",
     emoji: "🏫",
     tone: "good",
-    message: () => "町の学校が教育雑誌で紹介されました。子育て世代の注目が集まっています。",
+    message: () => "街の学校が教育雑誌で紹介されました。子育て世代の注目が集まっています。",
     weight: ({ state }) => (countBuildings(state, "school") > 0 ? 1.2 : 0),
     apply: ({ state }) => {
       modify(state, "schoolPraise", "学校の評判", "🏫", 4, { resAppeal: 0.08, happiness: 2 });
-      return "4か月間、転入しやすさUP・満足度 +2";
+      return "引っ越してくる人が増える・満足度 +2（4か月）";
     },
   },
   {
@@ -154,13 +160,13 @@ export const EVENT_DEFS: EventDef[] = [
     title: "観光客が増加",
     emoji: "📸",
     tone: "good",
-    message: ({ state }) => (state.profile.trait === "coastal" ? "海の景色がSNSで話題に！観光客が押し寄せています。" : "町並みが話題になり、観光客が増えています。"),
+    message: ({ state }) => (state.profile.trait === "coastal" ? "海の景色がSNSで話題に！観光客が押し寄せています。" : "街並みが話題になり、観光客が増えています。"),
     weight: ({ state, a }) => (a.population > 150 ? (state.profile.trait === "coastal" ? 2.2 : 0.8) : 0),
     apply: ({ state, a }) => {
       const bonus = Math.round((100_000 + a.population * 60) / 1000) * 1000;
       state.money += bonus;
-      modify(state, "tourism", "観光ブーム", "📸", 3, { comDemand: 0.3 });
-      return `観光収入 +${yen(bonus)}、3か月間 商業需要 +30%`;
+      modify(state, "tourism", "観光客の増加", "📸", 3, { comDemand: 0.3 });
+      return `観光収入 +${yen(bonus)}・お店の客 +30%（3か月）`;
     },
   },
   {
@@ -182,7 +188,7 @@ export const EVENT_DEFS: EventDef[] = [
     title: "ベビーブーム",
     emoji: "👶",
     tone: "good",
-    message: () => "住みやすい町で赤ちゃんが次々と誕生しています。",
+    message: () => "住みやすい街で赤ちゃんが次々と誕生しています。",
     weight: ({ a }) => (a.cityHappiness >= 60 && a.employment.vacancyRate > 0.04 && a.population > 100 ? 1 : 0),
     apply: ({ state, a }) => {
       let born = 0;
@@ -203,23 +209,24 @@ export const EVENT_DEFS: EventDef[] = [
     title: "テレビで紹介",
     emoji: "📺",
     tone: "good",
-    message: () => "「住みたい町特集」でこの町が紹介されました！",
+    message: () => "「住みたい街特集」でこの街が紹介されました！",
     weight: ({ a }) => (a.cityHappiness >= 68 ? 1 : 0),
     apply: ({ state }) => {
       modify(state, "tvFeature", "テレビ効果", "📺", 3, { resAppeal: 0.1, comDemand: 0.15 });
-      return "3か月間、転入しやすさUP・商業需要 +15%";
+      return "引っ越してくる人が増える・お店の客 +15%（3か月）";
     },
   },
   {
     id: "donation",
-    title: "地元の名士から寄付",
+    title: "地元の有名人から寄付",
     emoji: "🎁",
     tone: "good",
-    message: () => "町の発展を願う地元の名士から、まちづくり基金への寄付がありました。",
+    message: () => "街の発展を願う地元の有名人から、まちづくり基金に寄付がありました。",
     weight: () => 0.6,
     apply: ({ state }) => {
-      state.money += 300_000;
-      return `資金 +${yen(300_000)}`;
+      const v = scaledCost(state, 300_000);
+      state.money += v;
+      return `資金 +${yen(v)}`;
     },
   },
   {
@@ -232,7 +239,7 @@ export const EVENT_DEFS: EventDef[] = [
     weight: ({ a }) => (a.cityEnvironment < 70 ? 1 : 0.2),
     apply: ({ state }) => {
       modify(state, "greenVolunteer", "緑化ボランティア", "🌱", 6, { env: 6 });
-      return "6か月間、環境 +6";
+      return "環境 +6（6か月）";
     },
   },
 
@@ -274,7 +281,7 @@ export const EVENT_DEFS: EventDef[] = [
     apply: ({ state, tile }) => {
       const text = damageBuilding(state, tile!);
       modify(state, "factoryAccident", "工場事故の影響", "💥", 4, { env: -8, happiness: -3 });
-      return `${text} 4か月間、環境 -8・満足度 -3`;
+      return `${text} 環境 -8・満足度 -3（4か月）`;
     },
   },
   {
@@ -286,7 +293,7 @@ export const EVENT_DEFS: EventDef[] = [
     weight: ({ a }) => (a.congestion > 12 ? 1.2 : 0),
     apply: ({ state }) => {
       modify(state, "trafficJam", "道路工事の渋滞", "🚗", 2, { traffic: 0.3 });
-      return "2か月間、交通量 +30%";
+      return "交通量 +30%（2か月）";
     },
   },
   {
@@ -295,11 +302,11 @@ export const EVENT_DEFS: EventDef[] = [
     title: "景気後退",
     emoji: "📉",
     tone: "bad",
-    message: () => "全国的な景気の冷え込みが町にも波及しています。",
+    message: () => "全国的な景気の冷え込みが街にも広がっています。",
     weight: ({ state }) => (state.turn >= 6 ? 0.6 : 0),
     apply: ({ state }) => {
       modify(state, "recession", "景気後退", "📉", 4, { taxIncome: -0.12, comDemand: -0.15, indDemand: -0.25 });
-      return "4か月間、税収 -12%・商業需要 -15%・工業需要 -25%";
+      return "税収 -12%・お店の客 -15%・工場の注文 -25%（4か月）";
     },
   },
   {
@@ -307,11 +314,11 @@ export const EVENT_DEFS: EventDef[] = [
     title: "大規模停電",
     emoji: "🔌",
     tone: "bad",
-    message: () => "送電設備のトラブルで、町全体が一時停電しました。",
+    message: () => "送電設備のトラブルで、街全体が一時停電しました。",
     weight: () => 0.4,
     apply: ({ state }) => {
       modify(state, "powerOutage", "停電の影響", "🔌", 1, { indDemand: -0.3, happiness: -3 });
-      return "1か月間、工業需要 -30%・満足度 -3";
+      return "工場の注文 -30%・満足度 -3（1か月）";
     },
   },
   {
@@ -320,7 +327,7 @@ export const EVENT_DEFS: EventDef[] = [
     title: "感染症が流行",
     emoji: "🤧",
     tone: "bad",
-    message: () => "季節性の感染症が町で流行しています。",
+    message: () => "季節性の感染症が街で流行しています。",
     weight: ({ a }) => (a.population > 300 ? 0.6 : 0),
     apply: ({ state, a }) => {
       const covered = state.tiles.reduce((n, t, i) => n + (t.building?.type === "residential" && a.coverage.health[i] > 0 ? t.building.occupants : 0), 0);
@@ -331,7 +338,7 @@ export const EVENT_DEFS: EventDef[] = [
       }
       const lost = loseResidents(state, 0.02);
       modify(state, "epidemic", "感染症", "🤧", 2, { happiness: -6 });
-      return `療養のため ${lost}人が町を離れ、2か月間 満足度 -6。病院があれば防げます。`;
+      return `療養のため ${lost}人が街を離れました。満足度 -6（2か月）。病院が近ければ防げます。`;
     },
   },
   {
@@ -339,7 +346,7 @@ export const EVENT_DEFS: EventDef[] = [
     title: "台風が直撃",
     emoji: "🌀",
     tone: "bad",
-    message: () => "大型の台風が町を直撃しました。",
+    message: () => "大型の台風が街を直撃しました。",
     weight: ({ state }) => ([7, 8, 9, 10].includes(monthOf(state.turn)) ? (state.profile.trait === "coastal" ? 2.5 : 0.8) : 0),
     apply: ({ state }) => {
       const roads = countBuildings(state, "road") + countBuildings(state, "avenue");
@@ -358,7 +365,7 @@ export const EVENT_DEFS: EventDef[] = [
     weight: ({ a }) => (a.employment.unemployment > 0.12 && a.population > 100 ? 2 : 0),
     apply: ({ state }) => {
       const lost = loseResidents(state, 0.04);
-      return `人口 -${lost}人。商業・工業を増やして雇用を作りましょう。`;
+      return `人口 -${lost}人。商業・工業を増やして働く場所を作りましょう。`;
     },
   },
   {
@@ -369,7 +376,7 @@ export const EVENT_DEFS: EventDef[] = [
     message: () => "古い水道管が破裂し、緊急の修理が必要になりました。",
     weight: ({ state }) => (state.turn >= 4 ? 0.5 : 0),
     apply: ({ state }) => {
-      state.money -= 150_000;
+      state.money -= scaledCost(state, 150_000);
       return `修理費 ${yen(150_000)}`;
     },
   },
@@ -380,13 +387,13 @@ export const EVENT_DEFS: EventDef[] = [
     title: "大型ショッピングモールから進出提案",
     emoji: "🛍️",
     tone: "neutral",
-    message: () => "大手デベロッパーから、郊外型の大型ショッピングモールを出店したいと提案がありました。",
+    message: () => "大手の開発会社から、郊外型の大型ショッピングモールを出店したいと提案がありました。",
     weight: ({ state, a }) => (a.population >= 500 && !state.modifiers.some((m) => m.id === "mall") ? 1 : 0),
     choices: [
       {
         id: "accept",
         label: "誘致する",
-        detail: "協力金 +¥300,000 / 雇用 +60 / 商業税UP / 交通量 +20% / 地元商店の需要 -10%（2年間）",
+        detail: "協力金 +¥30万・働く場所 +60人・税収アップ・満足度 +2／交通量 +20%・地元のお店の客 -10%（2年）",
         apply: ({ state }) => {
           state.money += 300_000;
           modify(state, "mall", "ショッピングモール", "🛍️", 24, { extraComJobs: 60, traffic: 0.2, comDemand: -0.1, happiness: 2 });
@@ -396,7 +403,7 @@ export const EVENT_DEFS: EventDef[] = [
       {
         id: "decline",
         label: "断る",
-        detail: "地元の商店街から感謝される（商業需要 +5%・6か月）",
+        detail: "地元の商店街に感謝される（お店の客 +5%・6か月）",
         apply: ({ state }) => {
           modify(state, "mallDeclined", "商店街の活気", "🏮", 6, { comDemand: 0.05 });
           return "地元の商店街から感謝の声が届きました。";
@@ -407,20 +414,20 @@ export const EVENT_DEFS: EventDef[] = [
   {
     id: "factoryOffer",
     eras: ["growth"],
-    title: "工場誘致の打診",
-    emoji: "🏗️",
+    title: "工場を増やしたいという相談",
+    emoji: "🏭",
     tone: "neutral",
-    message: () => "大手メーカーが、この町に取引先の工場群を増やしたいと打診してきました。",
+    message: () => "大手メーカーから、この街に取引先の工場を増やしたいと相談がありました。",
     weight: ({ a }) => (a.population >= 300 && a.employment.indJobs > 0 ? 0.9 : 0),
     choices: [
       {
         id: "accept",
         label: "受け入れる",
-        detail: "協力金 +¥500,000 / 工業需要 +40% / 環境 -6（1年間）",
+        detail: "協力金 +¥50万・工場の注文 +40%／環境 -6（1年）",
         apply: ({ state }) => {
           state.money += 500_000;
-          modify(state, "factoryOffer", "工場誘致", "🏗️", 12, { indDemand: 0.4, env: -6 });
-          return "工場の注文が増えます。工業を増やすチャンス！";
+          modify(state, "factoryOffer", "工場の誘致", "🏭", 12, { indDemand: 0.4, env: -6 });
+          return "工場の注文が増えます。工業を増やすチャンスです。";
         },
       },
       {
@@ -452,10 +459,10 @@ export const EVENT_DEFS: EventDef[] = [
       {
         id: "wall",
         label: "防音壁を設置する",
-        detail: "¥200,000 / 騒音 -60%（1年間）",
-        cost: () => 200_000,
+        detail: "騒音 -60%（1年）",
+        cost: (s) => scaledCost(s, 200_000),
         apply: ({ state }) => {
-          state.money -= 200_000;
+          state.money -= scaledCost(state, 200_000);
           modify(state, "noiseWall", "防音壁", "🧱", 12, { noiseShield: 0.6 });
           return "防音壁で騒音がやわらぎました。";
         },
@@ -474,7 +481,7 @@ export const EVENT_DEFS: EventDef[] = [
   {
     id: "roadDecay",
     title: "道路の老朽化",
-    emoji: "🚧",
+    emoji: "🕳️",
     tone: "bad",
     message: () => "開通から年数がたった道路で、ひび割れや穴が目立つようになりました。",
     weight: ({ state }) => (state.turn >= 8 && countBuildings(state, "road") >= 20 && !state.modifiers.some((m) => m.id === "roadDecay") ? 0.8 : 0),
@@ -482,7 +489,7 @@ export const EVENT_DEFS: EventDef[] = [
       {
         id: "repair",
         label: "補修する",
-        detail: "道路1マスあたり ¥4,000",
+        detail: "道路1マスにつき ¥4,000。悪い効果なし",
         cost: (s) => countBuildings(s, "road") * 4_000,
         apply: ({ state }) => {
           const cost = countBuildings(state, "road") * 4_000;
@@ -513,18 +520,18 @@ export const EVENT_DEFS: EventDef[] = [
       {
         id: "support",
         label: "補助金を出す",
-        detail: "¥150,000 / 満足度 +8・商業需要 +10%（3か月）",
-        cost: () => 150_000,
+        detail: "満足度 +8・お店の客 +10%（3か月）",
+        cost: (s) => scaledCost(s, 150_000),
         apply: ({ state }) => {
-          state.money -= 150_000;
+          state.money -= scaledCost(state, 150_000);
           modify(state, "festival", "夏祭りの余韻", "🎆", 3, { happiness: 8, comDemand: 0.1 });
           return "盛大な夏祭りで町が一つになりました！";
         },
       },
       {
         id: "skip",
-        label: "今年は見送る",
-        detail: "小規模に開催（満足度 +1・1か月）",
+        label: "小さく開く（補助なし）",
+        detail: "満足度 +1（1か月）",
         apply: ({ state }) => {
           modify(state, "festival", "小さなお祭り", "🏮", 1, { happiness: 1 });
           return "こぢんまりとしたお祭りが開かれました。";
@@ -534,7 +541,7 @@ export const EVENT_DEFS: EventDef[] = [
   },
   {
     id: "parkRequest",
-    title: "緑を増やしてほしいという署名",
+    title: "緑を増やしてほしいという声",
     emoji: "✍️",
     tone: "neutral",
     message: () => "「もっと緑のある街に」という住民の署名が集まりました。",
@@ -543,10 +550,10 @@ export const EVENT_DEFS: EventDef[] = [
       {
         id: "fund",
         label: "緑化基金をつくる",
-        detail: "¥250,000 / 環境 +5・満足度 +4（6か月）",
-        cost: () => 250_000,
+        detail: "環境 +5・満足度 +4（6か月）",
+        cost: (s) => scaledCost(s, 250_000),
         apply: ({ state }) => {
-          state.money -= 250_000;
+          state.money -= scaledCost(state, 250_000);
           modify(state, "greenFund", "緑化基金", "🌳", 6, { env: 5, happiness: 4 });
           return "街に花壇や街路樹が増えました。";
         },
@@ -564,10 +571,10 @@ export const EVENT_DEFS: EventDef[] = [
   },
   {
     id: "redevelopment",
-    title: "再開発業者からの提案",
-    emoji: "🏗️",
+    title: "再開発の提案",
+    emoji: "📐",
     tone: "neutral",
-    message: () => "デベロッパーから「古い住宅地を一気にマンションに建て替えたい」と提案がありました。",
+    message: () => "開発会社から「古い住宅地を一気にマンションに建て替えたい」と提案がありました。",
     weight: ({ state }) => (rankIndex(state.rank) >= 1 ? 0.8 : 0),
     pickTile: (ctx) =>
       pickBuilding(ctx, (i) => {
@@ -578,20 +585,20 @@ export const EVENT_DEFS: EventDef[] = [
       {
         id: "accept",
         label: "許可する",
-        detail: "対象の住宅が一気にマンション（Lv3）に / 反対の声で満足度 -2（3か月）",
+        detail: "対象の住宅がすぐマンションに建て替わる／反対の声で満足度 -2（3か月）",
         apply: ({ state, tile }) => {
           const b = state.tiles[tile!].building!;
           b.level = 3;
           b.growth = 0;
-          modify(state, "redevelopment", "再開発への反発", "🪧", 3, { happiness: -2 });
+          modify(state, "redevelopment", "再開発への反発", "🙅", 3, { happiness: -2 });
           return "真新しいマンションが完成し、入居者の募集が始まりました。";
         },
       },
       {
         id: "decline",
-        label: "町並みを守る",
+        label: "街並みを守る",
         detail: "変化なし",
-        apply: () => "昔ながらの町並みが守られました。",
+        apply: () => "昔ながらの街並みが守られました。",
       },
     ],
   },
@@ -607,12 +614,12 @@ export const EVENT_DEFS: EventDef[] = [
       {
         id: "join",
         label: "参加する",
-        detail: "¥300,000 / 環境 +6（2年間）",
-        cost: () => 300_000,
+        detail: "環境 +6（2年）",
+        cost: (s) => scaledCost(s, 300_000),
         apply: ({ state }) => {
-          state.money -= 300_000;
+          state.money -= scaledCost(state, 300_000);
           modify(state, "solar", "ソーラーパネル", "☀️", 24, { env: 6 });
-          return "クリーンな電力で町の環境が良くなります。";
+          return "クリーンな電気で街の空気がきれいになります。";
         },
       },
       { id: "skip", label: "見送る", detail: "変化なし", apply: () => "今回は見送りました。" },
@@ -621,31 +628,31 @@ export const EVENT_DEFS: EventDef[] = [
   {
     id: "university",
     title: "大学キャンパスの誘致",
-    emoji: "🎓",
+    emoji: "📚",
     tone: "neutral",
-    message: () => "大学が新しいキャンパスの候補地としてこの市を検討しています。",
+    message: () => "大学が新しいキャンパスの候補地として、この街を検討しています。",
     weight: ({ state }) => (rankIndex(state.rank) >= 2 && !state.modifiers.some((m) => m.id === "university") ? 0.8 : 0),
     choices: [
       {
         id: "invite",
         label: "誘致する",
-        detail: "¥1,500,000 / 転入しやすさUP・商業需要 +20%・満足度 +3（2年間）",
-        cost: () => 1_500_000,
+        detail: "引っ越してくる人が増える・お店の客 +20%・満足度 +3（2年）",
+        cost: (s) => scaledCost(s, 1_500_000),
         apply: ({ state }) => {
-          state.money -= 1_500_000;
-          modify(state, "university", "大学キャンパス", "🎓", 24, { resAppeal: 0.1, comDemand: 0.2, happiness: 3 });
+          state.money -= scaledCost(state, 1_500_000);
+          modify(state, "university", "大学キャンパス", "📚", 24, { resAppeal: 0.1, comDemand: 0.2, happiness: 3 });
           return "学生たちで街がにぎやかになりました！";
         },
       },
-      { id: "decline", label: "見送る", detail: "変化なし", apply: () => "キャンパスは隣の市に決まりました。" },
+      { id: "decline", label: "見送る", detail: "変化なし", apply: () => "キャンパスは隣の街に決まりました。" },
     ],
   },
   {
     id: "taxPetition",
-    title: "減税を求める陳情",
-    emoji: "🪧",
+    title: "減税のお願い",
+    emoji: "📝",
     tone: "bad",
-    message: () => "市民団体から「住民税が高すぎる」と減税を求める陳情が届きました。",
+    message: () => "住民の会から「住宅税が高すぎる」と減税のお願いが届きました。",
     weight: ({ state }) => (state.taxes.residential >= 11 ? 1.5 : 0),
     choices: [
       {
@@ -663,7 +670,7 @@ export const EVENT_DEFS: EventDef[] = [
         label: "据え置く",
         detail: "満足度 -4（3か月）",
         apply: ({ state }) => {
-          modify(state, "taxKept", "増税への不満", "😤", 3, { happiness: -4 });
+          modify(state, "taxKept", "据え置きへの不満", "😤", 3, { happiness: -4 });
           return "住民の不満が高まっています。";
         },
       },
@@ -675,21 +682,21 @@ export const EVENT_DEFS: EventDef[] = [
     title: "スタートアップの誘致",
     emoji: "🚀",
     tone: "neutral",
-    message: () => "若い起業家たちが、この町にオフィスを構えたいと相談に来ました。",
+    message: () => "若い起業家たちが、この街にオフィスを構えたいと相談に来ました。",
     weight: ({ state, a }) => (countBuildings(state, "school") > 0 && a.population > 600 ? 0.7 : 0),
     choices: [
       {
         id: "support",
         label: "起業支援をする",
-        detail: "¥400,000 / 商業需要 +30%（1年間）",
-        cost: () => 400_000,
+        detail: "お店・オフィスの需要 +30%（1年）",
+        cost: (s) => scaledCost(s, 400_000),
         apply: ({ state }) => {
-          state.money -= 400_000;
+          state.money -= scaledCost(state, 400_000);
           modify(state, "startup", "スタートアップ", "🚀", 12, { comDemand: 0.3 });
           return "新しいオフィスの需要が生まれました。商業を増やしましょう。";
         },
       },
-      { id: "skip", label: "見送る", detail: "変化なし", apply: () => "起業家たちは別の町へ向かいました。" },
+      { id: "skip", label: "見送る", detail: "変化なし", apply: () => "起業家たちは別の街へ向かいました。" },
     ],
   },
 
@@ -701,13 +708,13 @@ export const EVENT_DEFS: EventDef[] = [
     tone: "bad",
     cooldown: 48,
     eras: ["postIndustrial", "stagnation"],
-    message: () => "町でいちばん大きな取引先の企業が、工場とオフィスの撤退を検討しているという知らせが入りました。",
+    message: () => "街でいちばん大きな企業が、工場とオフィスの撤退を検討しているという知らせが入りました。",
     weight: ({ state, a }) => (state.turn >= 24 && a.employment.indJobs + a.employment.comJobs >= 300 ? 0.7 : 0),
     choices: [
       {
         id: "keep",
         label: "補助金で引き留める",
-        detail: "人口に応じた補助金を払う / 撤退は回避され、満足度 +2（6か月）",
+        detail: "撤退を防ぐ・満足度 +2（6か月）",
         cost: (s) => Math.max(800_000, Math.round((s.tiles.reduce((n, t) => n + (t.building?.type === "residential" ? t.building.occupants : 0), 0) * 300) / 10_000) * 10_000),
         apply: ({ state }) => {
           const cost = Math.max(800_000, Math.round((state.tiles.reduce((n, t) => n + (t.building?.type === "residential" ? t.building.occupants : 0), 0) * 300) / 10_000) * 10_000);
@@ -719,10 +726,10 @@ export const EVENT_DEFS: EventDef[] = [
       {
         id: "accept",
         label: "撤退を受け入れる",
-        detail: "工業の需要 -35%・商業の需要 -10%（1年間）。空いた土地は別の使い道に",
+        detail: "工場の注文 -35%・お店の客 -10%（1年）",
         apply: ({ state }) => {
-          modify(state, "bigEmployerLeft", "大企業の撤退", "📦", 12, { indDemand: -0.35, comDemand: -0.1 });
-          return "工場の注文が大きく減ります。失業に注意し、商業や公園への建て替えを考えましょう。";
+          modify(state, "bigEmployerLeft", "大企業の撤退", "🚚", 12, { indDemand: -0.35, comDemand: -0.1 });
+          return "工場の注文が大きく減ります。失業に注意し、商業への建て替えを考えましょう。";
         },
       },
     ],
@@ -733,7 +740,7 @@ export const EVENT_DEFS: EventDef[] = [
     emoji: "🌋",
     tone: "bad",
     cooldown: 96,
-    message: () => "強い地震が町を襲いました。",
+    message: () => "強い地震が街を襲いました。",
     weight: ({ state, a }) => (state.turn >= 24 && a.population > 500 ? 0.18 : 0),
     apply: ({ state, a, rng }) => {
       const targets = state.tiles
@@ -752,7 +759,7 @@ export const EVENT_DEFS: EventDef[] = [
       const covered = state.tiles.reduce((n, t, i) => n + (t.building?.type === "residential" && a.coverage.health[i] > 0 ? t.building.occupants : 0), 0);
       const lost = a.population > 0 && covered / a.population < 0.6 ? loseResidents(state, 0.02) : 0;
       modify(state, "earthquake", "地震からの復興", "🧱", 3, { happiness: -4 });
-      return `${damaged}棟が被害を受けました。${lost > 0 ? `${lost}人が町を離れました（病院が近くにあれば防げます）。` : "病院と消防のおかげで被害は抑えられました。"} 満足度 -4（3か月）`;
+      return `${damaged}棟が被害を受けました。${lost > 0 ? `${lost}人が街を離れました（病院が近ければ防げます）。` : "病院と消防署のおかげで被害は抑えられました。"} 満足度 -4（3か月）`;
     },
   },
   {
@@ -782,7 +789,7 @@ export const EVENT_DEFS: EventDef[] = [
   {
     id: "rivalCity",
     title: "隣町が大規模ニュータウンを開発",
-    emoji: "🏙️",
+    emoji: "🆚",
     tone: "bad",
     cooldown: 60,
     message: () => "隣町が大きなニュータウンを売り出し、若い世帯を呼び込もうとしています。",
@@ -791,21 +798,21 @@ export const EVENT_DEFS: EventDef[] = [
       {
         id: "compete",
         label: "子育て支援で対抗する",
-        detail: "人口に応じた費用 / 転入しやすさUP（1年間）",
+        detail: "引っ越してくる人が増える（1年）",
         cost: (s) => Math.max(500_000, Math.round((s.tiles.reduce((n, t) => n + (t.building?.type === "residential" ? t.building.occupants : 0), 0) * 200) / 10_000) * 10_000),
         apply: ({ state }) => {
           const cost = Math.max(500_000, Math.round((state.tiles.reduce((n, t) => n + (t.building?.type === "residential" ? t.building.occupants : 0), 0) * 200) / 10_000) * 10_000);
           state.money -= cost;
           modify(state, "rivalCompete", "子育て支援キャンペーン", "👶", 12, { resAppeal: 0.06 });
-          return "「子育てするならこの町」が話題になりました。";
+          return "「子育てするならこの街」が話題になりました。";
         },
       },
       {
         id: "ignore",
         label: "様子を見る",
-        detail: "転入しにくくなる（1年間）",
+        detail: "引っ越してくる人が減る（1年）",
         apply: ({ state }) => {
-          modify(state, "rivalCity", "隣町に人気を奪われる", "🏙️", 12, { resAppeal: -0.08 });
+          modify(state, "rivalCity", "隣町に人気を奪われる", "🆚", 12, { resAppeal: -0.08 });
           return "若い世帯が隣町に流れています。住みやすさで巻き返しましょう。";
         },
       },
@@ -823,10 +830,10 @@ export const EVENT_DEFS: EventDef[] = [
       {
         id: "host",
         label: "立候補して開催する",
-        detail: "¥6,000,000 / 1年間、商業の需要 +50%・満足度 +5・転入しやすさUP・交通量 +20%",
-        cost: () => 6_000_000,
+        detail: "お店の客 +50%・満足度 +5・引っ越してくる人が増える／交通量 +20%（1年）",
+        cost: (s) => scaledCost(s, 6_000_000),
         apply: ({ state }) => {
-          state.money -= 6_000_000;
+          state.money -= scaledCost(state, 6_000_000);
           modify(state, "expo", "万博開催", "🎡", 12, { comDemand: 0.5, happiness: 5, resAppeal: 0.05, traffic: 0.2 });
           return "万博が開幕！世界中から人が訪れています。";
         },
@@ -837,7 +844,7 @@ export const EVENT_DEFS: EventDef[] = [
   {
     id: "remoteWork",
     title: "リモートワークが普及",
-    emoji: "🏡",
+    emoji: "💻",
     tone: "good",
     cooldown: 60,
     eras: ["digital"],
@@ -845,7 +852,7 @@ export const EVENT_DEFS: EventDef[] = [
     weight: ({ a }) => (a.cityHappiness >= 60 && a.population > 400 ? 0.4 : 0),
     apply: ({ state }) => {
       modify(state, "remoteWork", "リモートワーク移住", "💻", 12, { resAppeal: 0.08, comDemand: -0.05 });
-      return "1年間、転入しやすさが大きくUP（オフィス需要は少し下がる）";
+      return "引っ越してくる人が大きく増える・お店の客 -5%（1年）";
     },
   },
   {
@@ -855,13 +862,13 @@ export const EVENT_DEFS: EventDef[] = [
     tone: "good",
     cooldown: 48,
     eras: ["tourism"],
-    message: () => "話題の映画のロケ地にこの町が選ばれました！",
+    message: () => "話題の映画のロケ地にこの街が選ばれました！",
     weight: ({ a }) => (a.population > 500 && a.cityEnvironment >= 60 ? 0.5 : 0),
     apply: ({ state, a }) => {
       const v = Math.round((a.population * 40) / 1000) * 1000;
       state.money += v;
       modify(state, "filmLocation", "ロケ地巡り", "🎬", 4, { happiness: 4, comDemand: 0.15 });
-      return `撮影協力金 +${yen(v)}、4か月間 満足度 +4・商業の需要 +15%`;
+      return `撮影協力金 +${yen(v)}・満足度 +4・お店の客 +15%（4か月）`;
     },
   },
   {
@@ -870,13 +877,13 @@ export const EVENT_DEFS: EventDef[] = [
     emoji: "🔨",
     tone: "neutral",
     cooldown: 24,
-    message: () => "工務店組合から「町の空き家をまとめて改修して、また人が住めるようにしたい」と提案がありました。",
+    message: () => "工務店組合から「街の空き家をまとめて改修して、また使えるようにしたい」と提案がありました。",
     weight: ({ state }) => (state.tiles.filter((t) => t.building?.abandoned).length >= 2 ? 1.5 : 0),
     choices: [
       {
         id: "renovate",
         label: "改修費を補助する",
-        detail: "空き家1軒あたり ¥150,000 / すべての空き家が住める状態に戻る",
+        detail: "1軒につき ¥15万。すべての空き家・空き店舗・空き工場が元に戻る",
         cost: (s) => s.tiles.filter((t) => t.building?.abandoned).length * 150_000,
         apply: ({ state }) => {
           let n = 0;
@@ -912,7 +919,7 @@ export const EVENT_DEFS: EventDef[] = [
         t.building!.growth = -50;
         n++;
       }
-      return `${n}つの工場が閉鎖され、空き家になりました。撤去して別の使い道を考えましょう。`;
+      return `${n}つの工場が閉鎖され、空き工場になりました。建て替えて別の使い道を考えましょう。`;
     },
   },
 ];
@@ -959,7 +966,7 @@ export function rollEvent(draft: GameState, a: CityAnalysis, rng: Rng, force?: s
     const message = def.message(ectx);
     draft.eventLog = { ...log, [def.id]: draft.turn };
     if (def.choices) {
-      draft.pendingEvent = { eventId: def.id, turn: draft.turn, tile };
+      draft.pendingEvent = { eventId: def.id, turn: draft.turn, tile, targetType: tile !== undefined ? draft.tiles[tile]?.building?.type : undefined };
       const item: NewsItem = { turn: draft.turn, emoji: def.emoji, title: def.title, body: message, tone: def.tone, tile };
       return item;
     }
@@ -1006,7 +1013,8 @@ export function resolveEvent(state: GameState, a: CityAnalysis, choiceId: string
   if (cost > 0 && state.money < cost) return { ok: false, error: "資金が足りません" };
   const draft = structuredClone(state);
   // 対象の建物がなくなっていたら（撤去など）、効果のない選択として扱う
-  if (p.tile !== undefined && !draft.tiles[p.tile]?.building) {
+  const target = p.tile !== undefined ? draft.tiles[p.tile]?.building : undefined;
+  if (p.tile !== undefined && (!target || (p.targetType && target.type !== p.targetType))) {
     draft.pendingEvent = null;
     return { ok: true, state: draft, message: "対象の建物がなくなったため、話は立ち消えになりました" };
   }

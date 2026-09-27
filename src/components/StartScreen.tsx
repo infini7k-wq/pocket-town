@@ -106,11 +106,18 @@ export function StartScreen() {
             </>
           )}
 
+          {!saved && raw && (
+            <p className="rounded-2xl bg-amber-50 p-3 text-[11px] font-bold leading-relaxed text-amber-800">
+              ⚠️ 保存データを読み込めませんでした（新しいバージョンで保存されたか、データが壊れている可能性があります）。新しい町を始めても、元のデータは別の場所に退避されます。
+            </p>
+          )}
           {(!saved || showNew) && (
             <form
               className="space-y-4"
               onSubmit={(e) => {
                 e.preventDefault();
+                // 続きのデータがあるときは、上書きしてよいか確認する
+                if (saved && !window.confirm(`いまの町「${saved.townName}」（${formatDate(saved.turn)}）のセーブは上書きされます。\n（殿堂の記録は残ります）\n新しい町を始めますか？`)) return;
                 newGame(name, seed, scenario?.id);
               }}
             >

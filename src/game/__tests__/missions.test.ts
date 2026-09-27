@@ -55,9 +55,12 @@ describe("遊びやすさの補助", () => {
   it("住民の声には、解決に使える建物がついている", () => {
     const s = blankState();
     roadRow(s, 8, 3, 12);
-    for (let x = 3; x <= 6; x++) put(s, x, 9, "residential", 2, 50);
-    const v = voiceCandidates(s, analyzeCity(s), null);
-    expect(v.find((c) => c.id === "unemployment")?.tool).toBe("commercial");
+    // 学校の声は人口350人を超えてから出る
+    for (let x = 3; x <= 10; x++) put(s, x, 9, "residential", 2, 50);
+    const a = analyzeCity(s);
+    const v = voiceCandidates(s, a, null);
+    // 仕事不足は、いま需要の高いほう（工業 or 商業）をすすめる
+    expect(v.find((c) => c.id === "unemployment")?.tool).toBe(a.demand.industrial >= a.demand.commercial ? "industrial" : "commercial");
     expect(v.find((c) => c.id === "school")?.tool).toBe("school");
   });
 });

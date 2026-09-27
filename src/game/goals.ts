@@ -34,7 +34,7 @@ export const GOALS: GoalDef[] = [
   {
     id: "surplus",
     title: "黒字経営",
-    emoji: "💰",
+    emoji: "📈",
     description: "12か月連続で月次収支を黒字にする",
     reward: 500_000,
     progress: (s) => ratio(s.surplusStreak, 12),
@@ -113,7 +113,7 @@ export const GOALS: GoalDef[] = [
   {
     id: "pop20k",
     title: "人口2万人の大都会",
-    emoji: "🌃",
+    emoji: "👑",
     description: "人口20,000人",
     reward: 10_000_000,
     progress: (_s, a) => ratio(a.population, 20000),
@@ -137,8 +137,8 @@ export const GOALS: GoalDef[] = [
   {
     id: "rich",
     title: "財政豊かな街",
-    emoji: "🏦",
-    description: "借入なしで資金 ¥20,000,000",
+    emoji: "💰",
+    description: "借金ゼロで資金 ¥2,000万",
     reward: 0,
     progress: (s) => (s.loan > 0 ? Math.min(0.99, ratio(s.money, 20_000_000)) : ratio(s.money, 20_000_000)),
   },
@@ -217,12 +217,12 @@ export const MISSIONS: MissionDef[] = [
   { id: "m:road", title: "道路を3マス延ばそう", hint: "🛣️ 道路を選んで、役所につながる道路の先をなぞろう", tool: "road", reward: 50_000, progress: (s) => ratio(builtCount(s, ["road"]), 3) },
   { id: "m:house", title: "住宅を3つ建てよう", hint: "道路に面した空き地に 🏠 住宅を置こう", tool: "residential", reward: 80_000, progress: (s) => ratio(builtCount(s, ["residential"]), 3) },
   { id: "m:month", title: "「翌月へ」で時間を進めよう", hint: "▶ 翌月へ を押すと、置いた住宅に人が引っ越してくる", reward: 50_000, progress: (s) => (s.turn >= 1 && builtCount(s, ["residential"], 1) > 0 ? 1 : 0) },
-  { id: "m:job", title: "お店か工場を建てて仕事を増やそう", hint: "🏪 商業・🏭 工業は働く場所。工場は住宅から離すのがコツ", tool: "commercial", reward: 100_000, progress: (s) => ratio(builtCount(s, ["commercial", "industrial"]), 1) },
+  { id: "m:job", title: "お店か工場を建てて仕事を増やそう", hint: "🏪 商業・🏭 工業は働く場所。工場は住宅から3マス以上はなそう", tool: "commercial", reward: 100_000, progress: (s) => ratio(builtCount(s, ["commercial", "industrial"]), 1) },
   { id: "m:park", title: "公園をつくろう", hint: "🌳 公園の近くの住宅は満足度と環境が上がる", tool: "park", reward: 100_000, progress: (s) => ratio(builtCount(s, ["park", "bigPark"]), 1) },
   { id: "m:service", title: "学校か病院を建てよう", hint: "住民の声で「遠い」と言われている場所の近くに建てると効果的", tool: "school", reward: 200_000, progress: (s) => ratio(builtCount(s, ["school", "hospital"]), 1) },
-  { id: "m:grow", title: "自分で建てた住宅を集合住宅（Lv2）に育てよう", hint: "建物をタップすると、育つための条件がわかる", reward: 150_000, progress: (s) => ratio(builtCount(s, ["residential"], 2), 1) },
+  { id: "m:grow", title: "自分で建てた住宅を集合住宅に育てよう", hint: "建物をタップすると、育つための条件がわかる", reward: 150_000, progress: (s) => ratio(builtCount(s, ["residential"], 2), 1) },
   { id: "m:pop500", title: "人口500人をめざそう", hint: "住宅と仕事のバランスをとり、満足度を上げよう", reward: 300_000, progress: (_s, a) => ratio(a.population, 500) },
-  { id: "m:town", title: "人口1,000人で「町」にランクアップ！", hint: "町になると大通り・バス停・マンションが解禁される", reward: 0, progress: (s, a) => (rankIndex(s.rank) >= 1 ? 1 : ratio(a.population, 1000)) },
+  { id: "m:town", title: "人口1,000人で「町」にランクアップ", hint: "「町」になると大通り・バス停・マンションが解禁される", reward: 0, progress: (s, a) => (rankIndex(s.rank) >= 1 ? 1 : ratio(a.population, 1000)) },
 ];
 
 /** いま取り組むミッション（順番に1つずつ） */

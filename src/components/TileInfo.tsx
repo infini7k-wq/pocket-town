@@ -9,8 +9,10 @@ import {
   checkDemolish,
   demolish,
   effectiveCapacity,
-  forEachInRadius,
+  forEachInRange,
   formatYen,
+  checkRebuild,
+  rebuild,
   growthScore,
   happinessContext,
   happinessFactors,
@@ -22,11 +24,24 @@ import {
   nextLevelChecks,
   roadCapacity,
   toXY,
+  type BuildingType,
+  type CoverageKind,
 } from "@/game";
 import { useCity, useGame } from "./GameProvider";
 import { Button, ProgressBar, cx } from "./ui";
 
 const TRAFFIC_TEXT = ["", "空いている", "やや混雑", "渋滞"];
+
+/** 住宅に届いているかを見せる施設 */
+const NEARBY: Array<{ kind: CoverageKind; icon: string; label: string }> = [
+  { kind: "shopping", icon: "🛍️", label: "買い物" },
+  { kind: "park", icon: "🌳", label: "公園" },
+  { kind: "education", icon: "🏫", label: "学校" },
+  { kind: "health", icon: "🏥", label: "病院" },
+  { kind: "fire", icon: "🚒", label: "消防" },
+  { kind: "transit", icon: "🚏", label: "バス・駅" },
+];
+const ZONES: BuildingType[] = ["residential", "commercial", "industrial"];
 const TRAFFIC_COLOR = ["", "text-emerald-600", "text-amber-600", "text-rose-600"];
 const TERRAIN_TEXT = { grass: "草地", forest: "森（建設時に伐採費 ¥10,000）", water: "水辺（建設不可）" };
 
@@ -55,7 +70,7 @@ function Meter({ label, value, max = 100 }: { label: string; value: number; max?
 
 export function TileInfo({ onClose }: { onClose: () => void }) {
   const { state, analysis: a } = useCity();
-  const { selected, toast, runAction } = useGame();
+  const { selected, toast, runAction, setOverlay } = useGame();
   if (selected === null) return null;
   const i = selected;
   const tile = state.tiles[i];
@@ -122,7 +137,7 @@ export function TileInfo({ onClose }: { onClose: () => void }) {
     const lv = a.traffic.level[i];
     body = (
       <>
-        {header(b.type === "avenue" ? "🛤️" : "🛣️", BUILDINGS[b.type].name, `(${x}, ${y})`)}
+        {header(b.type === "avenue" ? BUILDINGS.avenue.emoji[1] : "🛣️", BUILDINGS[b.type].name, `(${x}, ${y})`)}
         <div className="mt-2">
           <Row label="交通状態">
             <span className={TRAFFIC_COLOR[lv]}>{TRAFFIC_TEXT[lv]}</span>
@@ -164,6 +179,26 @@ export function TileInfo({ onClose }: { onClose: () => void }) {
           {isRes && <Meter label="満足度" value={a.happiness[i]} />}
           <Meter label="環境" value={a.env[i]} />
           {isRes && factorList}
+          {isRes && b.level > 0 && (
+            <div className="mt-2">
+              <div className="text-[11px] font-bold text-slate-500">この家に届いている施設（タップで範囲を表示）</div>
+              <div className="mt-1 grid grid-cols-3 gap-1">
+                {NEARBY.map((n) => {
+                  const ok = a.coverage[n.kind][i] > 0;
+                  return (
+                    <button
+                      key={n.kind}
+                      type="button"
+                      onClick={() => setOverlay(n.kind as Parameters<typeof setOverlay>[0])}
+                      className={cx("rounded-lg px-1.5 py-1 text-[11px] font-bold", ok ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-400")}
+                    >
+                      {ok ? "✓" : "✗"} {n.icon} {n.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
           {b.type === "industrial" && b.level > 0 && <p className="mt-1 text-[11px] font-bold text-amber-700">🏭 周囲3マスの環境を下げ、2マス以内の住宅に騒音</p>}
         </div>
         {b.level > 0 && !b.abandoned && checks && (
@@ -193,7 +228,7 @@ export function TileInfo({ onClose }: { onClose: () => void }) {
     const def = BUILDINGS[b.type];
     let covered = 0;
     if (def.coverage) {
-      forEachInRadius(i, def.coverage.radius, state.width, state.height, (j) => {
+      forEachInRange(i, def.size ?? 1, def.coverage.radius, state.width, state.height, (j) => {
         const t = state.tiles[j].building;
         if (t?.type === "residential") covered += t.occupants;
       });
@@ -204,7 +239,7 @@ export function TileInfo({ onClose }: { onClose: () => void }) {
         <p className="mt-2 text-xs font-bold text-slate-600">{def.description}</p>
         {def.effect && def.coverage && (
           <p className="mt-2 rounded-xl bg-sky-50 p-2 text-[11px] font-bold leading-relaxed text-sky-800">
-            📡 効果範囲（地図の青い部分・半径{def.coverage.radius}マス）：{def.effect}
+            📡 効果範囲（地図の紫の枠・{def.size === 2 ? "建物の端から" : "半径"}{def.coverage.radius}マス。道路や川をはさんでも届く）：{def.effect}
           </p>
         )}
         <div className="mt-1">
@@ -226,9 +261,33 @@ export function TileInfo({ onClose }: { onClose: () => void }) {
   }
 
   const del = checkDemolish(state, i);
+  const rebuildTo = b && isZone(b.type) ? ZONES.filter((z) => z !== b.type) : [];
   return (
     <div>
       {body}
+      {rebuildTo.length > 0 && (
+        <div className="mt-3 rounded-xl bg-slate-50 p-2">
+          <div className="text-[11px] font-bold text-slate-500">🔁 建て替え（撤去せずに種類を変える。造成からやり直し）</div>
+          <div className="mt-1 flex gap-1.5">
+            {rebuildTo.map((z) => {
+              const c = checkRebuild(state, i, z);
+              return (
+                <Button
+                  key={z}
+                  size="sm"
+                  variant="secondary"
+                  disabled={!c.ok}
+                  onClick={() => {
+                    if (runAction((s) => rebuild(s, i, z))) toast(`${BUILDINGS[z].name}に建て替えました`, "info");
+                  }}
+                >
+                  {BUILDINGS[z].emoji[1]} {BUILDINGS[z].name} {formatYen(c.cost, { compact: true })}
+                </Button>
+              );
+            })}
+          </div>
+        </div>
+      )}
       {b && del.ok && (
         <div className="mt-3 flex justify-end">
           <Button

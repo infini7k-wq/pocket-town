@@ -8,7 +8,7 @@ import {
   checkPlacement,
   checkReclaim,
   footprint,
-  forEachInRadius,
+  forEachInRange,
   gridPath,
   isRoad,
   isUnlockedTile,
@@ -18,7 +18,7 @@ import {
   type BuildingType,
   type CoverageKind,
 } from "@/game";
-import { useCity, useGame, type Overlay } from "../GameProvider";
+import { RANGE_OVERLAYS, useCity, useGame, type Overlay } from "../GameProvider";
 import { cx } from "../ui";
 import { TileView } from "./TileView";
 
@@ -35,8 +35,19 @@ const RANGE_MODES: Array<{ id: Overlay; label: string; icon: string; building: B
   { id: "education", label: "学校", icon: "🏫", building: "school" },
   { id: "health", label: "病院", icon: "🏥", building: "hospital" },
   { id: "fire", label: "消防", icon: "🚒", building: "fireStation" },
-  { id: "transit", label: "バス・駅", icon: "🚌", building: "busStop" },
+  { id: "transit", label: "バス・駅", icon: "🚏", building: "busStop" },
+  { id: "shopping", label: "買い物", icon: "🛍️", building: "commercial" },
 ];
+
+/** 範囲モードごとの半径の説明（同じ種類の施設をまとめて） */
+const RANGE_RADIUS: Record<string, string> = {
+  park: "公園2マス・大きな公園4マス",
+  education: "学校4マス・大学8マス（2×2は建物の端から）",
+  health: "病院5マス",
+  fire: "消防署5マス",
+  transit: "バス停3マス・駅5マス・新幹線駅7マス",
+  shopping: "お店から3マス",
+};
 
 /** 地図の枠の内側の余白（角のマスが切れないように） */
 const FRAME = 6;
@@ -66,9 +77,15 @@ export function CityMap() {
   /** 拡大率（null = 自動：スマホなどでマスが小さすぎるときだけ拡大） */
   const [zoom, setZoom] = useState<number | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const [hover, setHover] = useState<number | null>(null);
+  const [mouseHover, setHover] = useState<number | null>(null);
   const painting = useRef(false);
   const lastTile = useRef<number | null>(null);
+  // スマホ：指を離したときにタップとして扱う（動かしたらスクロール）
+  const touchStart = useRef<{ x: number; y: number; tile: number } | null>(null);
+  // スマホ：公共施設などは「1回目で確認・2回目で建設」
+  const [pendingTap, setPendingTap] = useState<{ tool: string; tile: number } | null>(null);
+  const pending = pendingTap && pendingTap.tool === tool ? pendingTap.tile : null;
+  const hover = mouseHover ?? pending;
 
   useEffect(() => {
     const el = wrapRef.current;
@@ -124,19 +141,23 @@ export function CityMap() {
     const set = new Set<number>();
     let center: number | null = null;
     let radius = 0;
-    if (tool !== "inspect" && tool !== "bulldoze" && tool !== "reclaim" && hover !== null && BUILDINGS[tool].coverage && BUILDINGS[tool].coverage!.kind !== "shopping") {
+    let bigSize = 1;
+    if (tool !== "inspect" && tool !== "bulldoze" && tool !== "reclaim" && hover !== null && BUILDINGS[tool].coverage) {
       center = hover;
       radius = BUILDINGS[tool].coverage!.radius;
+      bigSize = BUILDINGS[tool].size ?? 1;
     } else if (tool === "inspect" && selected !== null) {
       const b = state.tiles[selected]?.building;
-      if (b && b.level === 0 && BUILDINGS[b.type].category === "project") return set;
+      if (b && b.level === 0 && (BUILDINGS[b.type].category === "project" || b.type === "commercial")) return set;
       const cov = b ? BUILDINGS[b.type].coverage : undefined;
-      if (b && cov && b.type !== "commercial") {
+      if (b && cov) {
         center = selected;
         radius = cov.radius;
+        bigSize = BUILDINGS[b.type].size ?? 1;
       }
     }
-    if (center !== null) forEachInRadius(center, radius, state.width, state.height, (j) => set.add(j));
+    // 2×2 の施設は、建物の端から数える
+    if (center !== null) forEachInRange(center, bigSize, radius, state.width, state.height, (j) => set.add(j));
     return set;
   }, [tool, hover, selected, state]);
 
@@ -168,10 +189,31 @@ export function CityMap() {
     return el ? Number(el.dataset.i) : null;
   };
 
+  /** なぞって連続で使えるツールか（道路・ゾーン・撤去・埋め立て） */
+  const paintTool = tool !== "inspect" && (tool === "bulldoze" || tool === "reclaim" || !!BUILDINGS[tool].paintable);
+
+  const onTap = (i: number) => {
+    if (tool === "inspect" || paintTool) {
+      applyToolAt(i, false);
+      return;
+    }
+    // 1回目のタップは場所の確認（費用と効果範囲を表示）、同じマスをもう一度タップで建設
+    if (pending === i) {
+      setPendingTap(null);
+      applyToolAt(i, false);
+    } else {
+      setPendingTap({ tool, tile: i });
+    }
+  };
+
   const onPointerDown = (e: React.PointerEvent) => {
     if (e.pointerType === "mouse" && e.button !== 0) return;
     const i = tileAt(e.clientX, e.clientY);
     if (i === null) return;
+    if (e.pointerType !== "mouse" && !paintTool) {
+      touchStart.current = { x: e.clientX, y: e.clientY, tile: i };
+      return;
+    }
     painting.current = true;
     lastTile.current = i;
     if (tool !== "inspect") (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
@@ -187,13 +229,40 @@ export function CityMap() {
       for (const j of path) applyToolAt(j, true);
     }
   };
+  const onPointerUp = (e: React.PointerEvent) => {
+    const start = touchStart.current;
+    touchStart.current = null;
+    if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) < 10) onTap(start.tile);
+    stopPainting();
+  };
   const stopPainting = () => {
     painting.current = false;
     lastTile.current = null;
     endStroke();
   };
 
-  const covKind = ["park", "education", "health", "fire", "transit"].includes(overlay) ? (overlay as CoverageKind) : null;
+  const covKind = RANGE_OVERLAYS.includes(overlay) ? (overlay as CoverageKind) : null;
+
+  // 効果範囲の境界線：範囲のプレビューがあればそれを、なければ表示中の施設の範囲を囲む
+  const edgeSet = useMemo(() => {
+    if (rangeTiles.size > 0) return rangeTiles;
+    if (!covKind) return null;
+    const set = new Set<number>();
+    analysis.coverage[covKind].forEach((v, i) => {
+      if (v > 0) set.add(i);
+    });
+    return set;
+  }, [rangeTiles, covKind, analysis]);
+  const edgeOf = (i: number, x: number, y: number): number => {
+    if (!edgeSet?.has(i)) return 0;
+    // 表示範囲の外は「範囲外」として扱い、地図の端にも線を引く
+    let m = 0;
+    if (y <= bounds.min || !edgeSet.has(i - state.width)) m |= 1;
+    if (x >= bounds.max || !edgeSet.has(i + 1)) m |= 2;
+    if (y >= bounds.max || !edgeSet.has(i + state.width)) m |= 4;
+    if (x <= bounds.min || !edgeSet.has(i - 1)) m |= 8;
+    return m;
+  };
 
   const rows: React.ReactNode[] = [];
   for (let y = bounds.min; y <= bounds.max; y++) {
@@ -254,6 +323,8 @@ export function CityMap() {
           bigSize={b ? BUILDINGS[b.type].size : undefined}
           buildLeft={b?.buildLeft}
           inRange={rangeTiles.has(i)}
+          rangeEdge={edgeSet ? edgeOf(i, x, y) : undefined}
+          covMark={edgeSet && b?.type === "residential" && b.level > 0 ? (edgeSet.has(i) ? "in" : "out") : undefined}
           soon={overlay === "none" && !!b && b.level > 0 && BUILDINGS[b.type].category === "zone" && readyToGrow(state, i, analysis)}
         />,
       );
@@ -296,13 +367,17 @@ export function CityMap() {
               width: size * cols,
               background: "#9fd066",
               // 調べる・1マスの施設ではスクロールでき、道路やゾーンはなぞって連続設置できる
-              touchAction: tool === "inspect" ? "auto" : tool !== "bulldoze" && tool !== "reclaim" && !BUILDINGS[tool].paintable && zoomed ? "pan-x pan-y" : "none",
+              // 調べる・公共施設ではスワイプで地図を動かせ、道路やゾーンはなぞって連続設置できる
+              touchAction: paintTool ? "none" : "pan-x pan-y",
               cursor: tool === "inspect" ? "pointer" : tool === "bulldoze" ? "not-allowed" : "crosshair",
             }}
             onPointerDown={onPointerDown}
             onPointerMove={onPointerMove}
-            onPointerUp={stopPainting}
-            onPointerCancel={stopPainting}
+            onPointerUp={onPointerUp}
+            onPointerCancel={() => {
+              touchStart.current = null;
+              stopPainting();
+            }}
             onPointerLeave={() => {
               setHover(null);
               if (painting.current) stopPainting();
@@ -334,6 +409,7 @@ export function CityMap() {
                 style={{ left: (hoverPos.x - bounds.min + 0.5) * size, top: Math.max(0, (hoverPos.y - bounds.min) * size - 22) }}
               >
                 {preview.text}
+                {pending !== null && preview.ok && "（もう一度タップで建設）"}
               </span>
             )}
           </div>
@@ -430,15 +506,19 @@ function MapLegend({ overlay, hasRange }: { overlay: Overlay; hasRange: boolean 
   } else {
     const mode = RANGE_MODES.find((m) => m.id === overlay)!;
     const def = BUILDINGS[mode.building];
+    const radius = RANGE_RADIUS[mode.id];
     title = (
       <>
-        {mode.icon} {mode.label}の効果が届く範囲です。{def.effect}。
+        {mode.icon} {mode.label}の効果が届く範囲（{radius}）。{def.effect ?? "住宅から近いほど便利"}。
       </>
     );
     items = hasRange ? (
       <>
-        <Swatch color="rgba(37,99,235,0.55)">範囲内（色が濃いほど効果が強い）</Swatch>
-        <span>結果は「😊 満足度」の表示で確認できます</span>
+        <Swatch color="rgba(37,99,235,0.55)">範囲内（濃いほど効果が強い）</Swatch>
+        <span>✓ 届いている住宅</span>
+        <span>✗ 届いていない住宅</span>
+        <span>📏 直線距離で届く（道路や川をはさんでもOK）</span>
+        <span>🛣️ 施設が道路に面し、役所までつながっていないと効果は半分</span>
       </>
     ) : (
       <span className="text-amber-600">まだ{def.name}がないので、効果の届く場所はありません。建てると範囲が青く表示されます。</span>

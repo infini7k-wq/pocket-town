@@ -5,6 +5,7 @@ import {
   ECONOMY,
   PROJECTS,
   cityScore,
+  nextAdvice,
   getScenario,
   weakestPart,
   describeEffects,
@@ -33,7 +34,7 @@ import {
   type ZoneType,
 } from "@/game";
 import { useState } from "react";
-import { useCity, useGame, type PanelTab } from "./GameProvider";
+import { mainOutflowReason, useCity, useGame, type PanelTab } from "./GameProvider";
 import { Sparkline } from "./Sparkline";
 import { Button, Card, ProgressBar, Signed, cx } from "./ui";
 
@@ -49,9 +50,10 @@ export function SidePanel() {
   const { panelTab, setPanelTab } = useGame();
   const badVoices = state.voices.filter((v) => v.tone === "bad").length;
   return (
-    <div className="flex flex-col gap-3">
+    <div id="side-panel" className="flex scroll-mt-40 flex-col gap-3">
       <ScenarioCard />
       <MissionCard />
+      <AdviceCard />
       <RequestsCard />
       <div className="grid grid-cols-4 gap-1 rounded-2xl bg-white/70 p-1 ring-1 ring-slate-900/5" role="tablist">
         {TABS.map((t) => (
@@ -201,6 +203,81 @@ const GRADE_COLOR: Record<string, string> = {
   D: "bg-slate-400",
 };
 
+// ---------------- 今月のおすすめ ----------------
+function AdviceCard() {
+  const { state, analysis } = useCity();
+  const { pickTool, setPanelTab, focusTile } = useGame();
+  const advice = nextAdvice(state, analysis);
+  // ミッション中はミッションのカードが案内するので出さない
+  if (!advice || advice.id === "mission") return null;
+  return (
+    <section className={cx("rounded-2xl p-3 shadow-sm ring-1", advice.urgent ? "bg-rose-50 ring-rose-200" : "bg-white/95 ring-slate-900/5")}>
+      <div className={cx("text-[11px] font-black", advice.urgent ? "text-rose-700" : "text-emerald-700")}>{advice.urgent ? "🚨 いますぐ" : "🧭 今月のおすすめ"}</div>
+      <div className="mt-0.5 flex items-start gap-2">
+        <span className="text-2xl leading-none" aria-hidden>
+          {advice.emoji}
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="text-sm font-black text-slate-800">{advice.title}</div>
+          <div className="text-[11px] font-bold leading-snug text-slate-500">{advice.detail}</div>
+        </div>
+      </div>
+      {(advice.tool || advice.openTab || advice.tile !== undefined) && (
+        <div className="mt-1.5 flex flex-wrap justify-end gap-1.5">
+          {advice.tile !== undefined && (
+            <button type="button" onClick={() => focusTile(advice.tile!)} className="rounded-full bg-blue-50 px-2.5 py-1 text-[11px] font-bold text-blue-700 hover:bg-blue-100">
+              📍 場所を見る
+            </button>
+          )}
+          {advice.tool && (
+            <button type="button" onClick={() => pickTool(advice.tool!)} className="rounded-full bg-orange-500 px-2.5 py-1 text-[11px] font-black text-white hover:bg-orange-600">
+              {BUILDINGS[advice.tool].emoji[1]} {BUILDINGS[advice.tool].name}を選ぶ
+            </button>
+          )}
+          {advice.openTab === "finance" && (
+            <button type="button" onClick={() => setPanelTab("finance")} className="rounded-full bg-violet-600 px-2.5 py-1 text-[11px] font-black text-white hover:bg-violet-700">
+              💴 財政を開く
+            </button>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
+/** スマホ：地図の上に出す1行のおすすめ（タップで対応する建物・画面へ） */
+export function AdviceStrip() {
+  const { state, analysis } = useCity();
+  const { pickTool, setPanelTab, focusTile } = useGame();
+  const advice = nextAdvice(state, analysis);
+  if (!advice || advice.id === "steady") return null;
+  const act = () => {
+    if (advice.tool) pickTool(advice.tool);
+    else if (advice.openTab === "finance") {
+      setPanelTab("finance");
+      document.getElementById("side-panel")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    } else if (advice.tile !== undefined) focusTile(advice.tile);
+  };
+  return (
+    <button
+      type="button"
+      onClick={act}
+      className={cx("flex w-full items-center gap-2 rounded-2xl px-3 py-2 text-left shadow-sm ring-1 lg:hidden", advice.urgent ? "bg-rose-50 ring-rose-200" : "bg-white/90 ring-slate-900/5")}
+    >
+      <span className="text-xl leading-none" aria-hidden>
+        {advice.emoji}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className={cx("block text-[10px] font-black", advice.urgent ? "text-rose-700" : "text-emerald-700")}>{advice.urgent ? "🚨 いますぐ" : advice.id === "mission" ? "🎯 ミッション" : "🧭 今月のおすすめ"}</span>
+        <span className="block truncate text-xs font-black text-slate-800">{advice.title}</span>
+      </span>
+      {(advice.tool || advice.openTab) && (
+        <span className="shrink-0 rounded-full bg-orange-500 px-2.5 py-1 text-[11px] font-black text-white">{advice.tool ? `${BUILDINGS[advice.tool].emoji[1]} 選ぶ` : "💴 開く"}</span>
+      )}
+    </button>
+  );
+}
+
 // ---------------- チャレンジ ----------------
 function ScenarioCard() {
   const { state, analysis } = useCity();
@@ -319,7 +396,7 @@ function VoicesPanel() {
                     )}
                     {v.tool && isBuildingUnlocked(v.tool, state.rank) && (
                       <button type="button" onClick={() => pickTool(v.tool!)} className="rounded-full bg-orange-50 px-2 py-0.5 text-[11px] font-bold text-orange-700 hover:bg-orange-100">
-                        {v.tool === "avenue" ? "🛤️" : BUILDINGS[v.tool].emoji[1]} {BUILDINGS[v.tool].name}を建てる
+                        {BUILDINGS[v.tool].emoji[1]} {BUILDINGS[v.tool].name}を建てる
                       </button>
                     )}
                     {v.openTab === "finance" && (
@@ -371,6 +448,7 @@ function LastReportCard() {
           </Signed>
         </div>
       </div>
+      {mainOutflowReason(r) && <div className="mt-1.5 rounded-lg bg-rose-50 px-2 py-1 text-[11px] font-bold text-rose-700">{mainOutflowReason(r)}</div>}
       <div className="mt-2 space-y-0.5 text-xs font-bold">
         <div className="flex justify-between">
           <span className="text-slate-500">税収</span>
@@ -623,7 +701,7 @@ function FinancePanel() {
       {state.money < 0 && (
         <div className="rounded-2xl bg-rose-600 p-3 text-white shadow">
           <div className="text-sm font-black">⚠️ 資金がマイナスです（{state.debtMonths}/{ECONOMY.bankruptcyMonths}か月）</div>
-          <p className="mt-1 text-xs font-bold text-rose-100">このまま{ECONOMY.bankruptcyMonths}か月続くと財政破綻です。融資・増税・公共施設の売却（撤去で40%返金）で立て直しましょう。</p>
+          <p className="mt-1 text-xs font-bold text-rose-100">このまま{ECONOMY.bankruptcyMonths}か月続くと財政破綻です。お金を借りる・税を上げる・公共施設を撤去する（40%が戻る）で立て直そう。</p>
         </div>
       )}
       <Card title="税率" icon="🧾">
@@ -662,7 +740,7 @@ function FinancePanel() {
           <MoneyRow label="🛣️ 道路の維持費" value={-b.expense.roads} />
           <MoneyRow label="🏛️ 公共施設の維持費" value={-b.expense.services} />
           <MoneyRow label="🗂️ 行政サービス費" value={-b.expense.admin} />
-          {b.expense.interest > 0 && <MoneyRow label="🏦 利息" value={-b.expense.interest} />}
+          {b.expense.interest > 0 && <MoneyRow label="💳 利息" value={-b.expense.interest} />}
           <div className="flex justify-between border-t border-slate-100 pt-1 text-sm">
             <span className="text-slate-800">月の収支</span>
             <Signed value={b.net}>{formatYen(b.net, { sign: true })}</Signed>
@@ -671,7 +749,7 @@ function FinancePanel() {
         <p className="mt-2 text-[10px] font-bold text-slate-400">行政サービス費は人口が増えるほど1人あたりも高くなります。</p>
       </Card>
 
-      <Card title="融資" icon="🏦">
+      <Card title="借入" icon="💳">
         <div className="flex justify-between text-xs font-bold">
           <span className="text-slate-500">借入残高 / 上限</span>
           <span className="tabular text-slate-800">

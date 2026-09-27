@@ -188,8 +188,9 @@ export function getRequestKind(id: string): RequestKind | undefined {
   return REQUEST_KINDS.find((k) => k.id === id);
 }
 
-export function requestReward(population: number): number {
-  return Math.round((200_000 + population * 60) / 10_000) * 10_000;
+/** 依頼の報酬。人口に応じて増え、終盤でも「月の税収の約2か月分」は下回らない */
+export function requestReward(population: number, monthlyIncome = 0): number {
+  return Math.round(Math.max(200_000 + population * 60, monthlyIncome * 2) / 10_000) * 10_000;
 }
 
 export function isRequestDone(r: CityRequest, s: GameState, a: CityAnalysis): boolean {
@@ -260,7 +261,7 @@ export function processRequests(draft: GameState, a: CityAnalysis, rng: Rng): Ne
     if (pool.length > 0) {
       const kind = rng.pick(pool);
       const { base, target, months } = kind.make(draft, a);
-      const req: CityRequest = { id: `${kind.id}-${draft.turn}`, kind: kind.id, base, target, deadline: draft.turn + months, reward: requestReward(a.population), createdTurn: draft.turn };
+      const req: CityRequest = { id: `${kind.id}-${draft.turn}`, kind: kind.id, base, target, deadline: draft.turn + months, reward: requestReward(a.population, a.budget.income.total), createdTurn: draft.turn };
       // すでに達成している依頼は出さない
       if (!isRequestDone(req, draft, a)) {
         draft.requests.push(req);

@@ -37,7 +37,9 @@ const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v
 
 /** 商業・工業税による需要の倍率 */
 export function bizTaxFactor(rate: number): number {
-  return clamp(1 - (rate - HAPPINESS.taxNeutral) * ECONOMY.bizTaxSensitivity, 0.4, 1.4);
+  // 標準より高い税は、上げるほど急に客や注文が減る（上げすぎると一気に冷え込む）
+  const d = rate - HAPPINESS.taxNeutral;
+  return clamp(1 - d * ECONOMY.bizTaxSensitivity - (d > 0 ? d * d * 0.004 : 0), 0.4, 1.4);
 }
 
 export function computeEmployment(state: GameState, net: RoadNetwork, fx: Effects): Employment {

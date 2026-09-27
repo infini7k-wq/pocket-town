@@ -31,7 +31,7 @@ describe("チャレンジ（シナリオ）", () => {
   it("6本あり、それぞれ特別な状況から始まる", () => {
     expect(SCENARIOS).toHaveLength(6);
     const debt = createNewGame("A", 1, { scenario: "debt" });
-    expect(debt.scenario).toMatchObject({ id: "debt", startTurn: 0, deadline: 6 * 12 - 1, result: null });
+    expect(debt.scenario).toMatchObject({ id: "debt", startTurn: 0, deadline: 5 * 12 - 1, result: null });
     expect(debt.loan).toBe(2_000_000);
     const green = createNewGame("A", 1, { scenario: "greenRevival" });
     expect(green.profile.trait).toBe("industrial");

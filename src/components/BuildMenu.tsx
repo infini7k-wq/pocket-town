@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { BUILD_ORDER, BUILDINGS, ECONOMY, PROJECTS, buildCost, formatYen, getRank, isBuildingUnlocked, rankIndex } from "@/game";
 import { useCity, useGame, type Tool } from "./GameProvider";
 import { NextMonthButton } from "./TopBar";
@@ -25,22 +26,22 @@ export function useTools(): ToolDef[] {
       const unlocked = isBuildingUnlocked(type, state.rank);
       return {
         id: type,
-        emoji: type === "avenue" ? "🛤️" : def.emoji[1],
+        emoji: def.emoji[1],
         name: def.name,
         cost: buildCost(state, type, Math.max(0, sample)),
         locked: unlocked ? undefined : `${getRank(def.unlockRank).name}で解禁`,
         hint:
           (def.size === 2 ? `【2×2・工事${def.buildMonths}か月・1つの街に1つ】` : "") +
           def.description +
-          (def.coverage && def.coverage.kind !== "shopping" ? `（範囲 ${def.coverage.radius}マス）` : "") +
+          (def.coverage && def.coverage.kind !== "shopping" ? `（範囲${def.coverage.radius}マス${def.size === 2 ? "・建物の端から" : ""}）` : "") +
           (def.upkeep ? ` / 維持費 ${formatYen(def.upkeep)}/月` : "") +
           (type === "road" ? " / 水の上は橋になる" : ""),
       };
     }),
-    { id: "bulldoze", emoji: "🚜", name: "撤去", hint: "建物を壊す。今月建てたものは全額返金、公共施設は40%で売却" },
+    { id: "bulldoze", emoji: "🚜", name: "撤去", hint: "建物を壊す。今月建てたものは全額、公共施設は40%が戻る" },
     {
       id: "reclaim",
-      emoji: "🌊",
+      emoji: "🏝️",
       name: "埋め立て",
       cost: ECONOMY.reclaimCost,
       locked: rankIndex(state.rank) >= rankIndex("metropolis") ? undefined : "大都市で解禁",
@@ -60,24 +61,34 @@ function costLabel(t: ToolDef): string {
   return t.cost !== undefined ? formatYen(t.cost, { compact: true }) : "";
 }
 
-/** スマホ：画面下の横スクロールのバー */
+/** スマホのメニューの分類 */
+const MOBILE_GROUPS: Array<{ id: string; label: string; ids: Tool[] }> = [
+  { id: "basic", label: "道路・ゾーン", ids: ["road", "avenue", "residential", "commercial", "industrial"] },
+  { id: "service", label: "公共施設", ids: ["park", "bigPark", "school", "hospital", "fireStation", "busStop", "plaza", "station", "landmark"] },
+  { id: "project", label: "大型", ids: [...PROJECTS, "reclaim"] },
+];
+const PINNED: Tool[] = ["inspect", "bulldoze"];
+
+/** スマホ：画面下のバー（調べる・撤去は常に左に固定、ほかは分類タブで切り替え） */
 export function BuildMenu() {
-  const { tool, setTool, advance } = useGame();
+  const { tool, setTool, advance, advanceMany, undo, canUndo } = useGame();
   const tools = useTools();
   const current = tools.find((t) => t.id === tool);
+  const [group, setGroup] = useState(() => MOBILE_GROUPS.find((g) => g.ids.includes(tool))?.id ?? "basic");
+  // 住民の声などから別の分類の建物が選ばれたら、その分類のタブに切り替える
+  const [prevTool, setPrevTool] = useState(tool);
+  if (prevTool !== tool) {
+    setPrevTool(tool);
+    const g = MOBILE_GROUPS.find((x) => x.ids.includes(tool));
+    if (g && g.id !== group) setGroup(g.id);
+  }
+  const shown = MOBILE_GROUPS.find((g) => g.id === group) ?? MOBILE_GROUPS[0];
+  const pinned = tools.filter((t) => PINNED.includes(t.id));
+  const list = shown.ids.map((id) => tools.find((t) => t.id === id)).filter((t): t is ToolDef => !!t);
 
-  return (
-    <div className="fixed inset-x-0 bottom-0 z-40 border-t border-white/70 bg-white/90 pb-[env(safe-area-inset-bottom)] backdrop-blur-md lg:hidden">
-      <div className="truncate px-3 pt-1.5 text-[11px] font-bold text-slate-500">
-        <span className="text-slate-800">
-          {current?.emoji} {current?.name}
-        </span>
-        {current?.cost !== undefined && <span className="tabular ml-1 text-blue-600">{formatYen(current.cost)}</span>}
-        <span className="ml-1.5">{current?.hint}</span>
-      </div>
-      <div className="flex items-center gap-2 px-2 pb-2 pt-1">
-        <div className="no-scrollbar flex flex-1 gap-1 overflow-x-auto" role="toolbar" aria-label="建設メニュー">
-          {tools.map((t, idx) => (
+  const toolButton = (t: ToolDef, compact = false) => {
+    const idx = tools.indexOf(t);
+    return (
             <button
               key={t.id}
               type="button"
@@ -86,7 +97,8 @@ export function BuildMenu() {
               aria-disabled={!!t.locked}
               title={toolTitle(t, idx)}
               className={cx(
-                "relative flex h-16 w-[62px] shrink-0 flex-col items-center justify-center rounded-xl text-center transition",
+                "relative flex h-16 shrink-0 flex-col items-center justify-center rounded-xl text-center transition",
+                compact ? "w-[48px]" : "w-[58px]",
                 tool === t.id ? "-translate-y-0.5 bg-blue-600 text-white shadow-md shadow-blue-600/30" : "bg-slate-50 text-slate-700 ring-1 ring-slate-900/5 hover:bg-white",
                 t.locked && "cursor-not-allowed opacity-50 grayscale",
               )}
@@ -97,7 +109,46 @@ export function BuildMenu() {
               <span className="mt-0.5 text-[10px] font-bold leading-tight">{t.name}</span>
               <span className={cx("tabular text-[9px] font-bold leading-tight", tool === t.id ? "text-blue-100" : "text-slate-400")}>{costLabel(t)}</span>
             </button>
-          ))}
+    );
+  };
+
+  return (
+    <div className="fixed inset-x-0 bottom-0 z-40 border-t border-white/70 bg-white/90 pb-[env(safe-area-inset-bottom)] backdrop-blur-md lg:hidden">
+      <div className="flex items-start gap-2 px-3 pt-1.5">
+        <p className="line-clamp-2 min-w-0 flex-1 text-[11px] font-bold leading-snug text-slate-500">
+          <span className="text-slate-800">
+            {current?.emoji} {current?.name}
+          </span>
+          {current?.cost !== undefined && <span className="tabular ml-1 text-blue-600">{formatYen(current.cost)}</span>}
+          <span className="ml-1.5">{current?.hint}</span>
+        </p>
+        <div className="flex shrink-0 gap-1">
+          <button type="button" onClick={undo} disabled={!canUndo} className="h-7 rounded-full bg-slate-100 px-2.5 text-[11px] font-black text-slate-600 disabled:opacity-35" aria-label="ひとつ戻す">
+            ↩️ 戻す
+          </button>
+          <button type="button" onClick={() => advanceMany(3)} className="h-7 rounded-full bg-orange-100 px-2.5 text-[11px] font-black text-orange-700" aria-label="3か月進める">
+            ⏩ 3か月
+          </button>
+        </div>
+      </div>
+      <div className="mt-1 flex gap-1 px-2" role="tablist" aria-label="建物の種類">
+        {MOBILE_GROUPS.map((g) => (
+          <button
+            key={g.id}
+            type="button"
+            role="tab"
+            aria-selected={group === g.id}
+            onClick={() => setGroup(g.id)}
+            className={cx("rounded-full px-3 py-1 text-[11px] font-black transition", group === g.id ? "bg-slate-800 text-white" : "bg-slate-100 text-slate-500")}
+          >
+            {g.label}
+          </button>
+        ))}
+      </div>
+      <div className="flex items-center gap-2 px-2 pb-2 pt-1">
+        <div className="flex shrink-0 gap-1 border-r border-slate-200 pr-1.5">{pinned.map((t) => toolButton(t, true))}</div>
+        <div className="no-scrollbar flex flex-1 gap-1 overflow-x-auto" role="toolbar" aria-label="建設メニュー">
+          {list.map((t) => toolButton(t))}
         </div>
         <NextMonthButton onClick={advance} compact />
       </div>
