@@ -77,7 +77,7 @@ export function advanceMonth(state: GameState, options: { forceEvent?: string } 
   // 時代の予告・転換と、陳情・依頼
   const eraChange = advanceEra(draft, rng);
   if (eraChange) events.push(draft.news[0]);
-  else if (draft.news[0]?.turn === draft.turn && draft.news[0].emoji === "📢") events.push(draft.news[0]);
+  else if (draft.news[0]?.turn === draft.turn && draft.news[0].kind === "eraNotice") events.push(draft.news[0]);
   events.push(...processRequests(draft, analyzeCity(draft), rng));
 
   // 月末の判定
@@ -96,6 +96,7 @@ export function advanceMonth(state: GameState, options: { forceEvent?: string } 
       title: `「${reached.name}」にランクアップ！`,
       body: `人口が${reached.minPopulation.toLocaleString("ja-JP")}人を突破しました。お祝い金 ¥${reward.toLocaleString("ja-JP")}`,
       tone: "good",
+      kind: "rankUp",
     };
     draft.news = [item, ...draft.news].slice(0, NEWS_LIMIT);
     events.push(item);

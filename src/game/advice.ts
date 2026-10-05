@@ -82,6 +82,16 @@ export function nextAdvice(state: GameState, a: CityAnalysis): Advice | null {
   if (top !== "residential" && a.employment.jobs > 20 && a.employment.jobFillRate < 0.9) top = "residential";
   if (a.demand[top] > DEMAND.high) {
     if (buildableLots(state, a) === 0) {
+      const megacity = state.rank === "megacity";
+      if (megacity || state.rank === "metropolis") {
+        return {
+          id: "land",
+          emoji: "🗺️",
+          title: "建てる土地をつくろう",
+          detail: `${BUILDINGS[top].name}を建てたいのに、空き地がありません。${megacity ? "土地の買い足し・" : ""}埋め立て・建て替え（詳細の🔁）で場所をつくろう`,
+          tool: undefined,
+        };
+      }
       return { id: "land", emoji: "🛣️", title: "道路を延ばそう", detail: `${BUILDINGS[top].name}を建てたいのに、道路に面した空き地がありません`, tool: "road" };
     }
     return { id: `demand-${top}`, ...ZONE_ADVICE[top], tool: top };

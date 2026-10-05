@@ -170,7 +170,7 @@ export const REQUEST_KINDS: RequestKind[] = [
     eligible: (s) => abandonedCount(s) >= 2,
     make: (s) => ({ base: abandonedCount(s), target: 0, months: 8 }),
     value: (s) => abandonedCount(s),
-    title: () => "空き家をなくしてほしい",
+    title: () => "空き家・空き店舗をなくしてほしい",
   },
   {
     id: "project",

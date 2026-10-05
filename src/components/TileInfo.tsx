@@ -214,7 +214,7 @@ export function TileInfo({ onClose }: { onClose: () => void }) {
     const jobs = jobsAt(b.type, b.level);
     body = (
       <>
-        {header(b.abandoned ? "🏚️" : BUILDINGS[b.type].emoji[b.level], b.abandoned ? "空き家" : levelName(b.type, b.level), `${BUILDINGS[b.type].name} ・ Lv${b.level} ・ (${x}, ${y})`)}
+        {header(b.abandoned ? "🏚️" : BUILDINGS[b.type].emoji[b.level], b.abandoned ? (b.type === "residential" ? "空き家" : b.type === "commercial" ? "空き店舗" : "空き工場") : levelName(b.type, b.level), `${BUILDINGS[b.type].name} ・ Lv${b.level} ・ (${x}, ${y})`)}
         <div className="mt-2">
           {isRes ? (
             <Row label="住民">

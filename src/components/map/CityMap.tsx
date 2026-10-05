@@ -48,12 +48,12 @@ const RANGE_MODES: Array<{ id: Overlay; label: string; icon: string; building: B
 
 /** 範囲モードごとの半径の説明（同じ種類の施設をまとめて） */
 const RANGE_RADIUS: Record<string, string> = {
-  park: "公園2マス・大きな公園4マス",
+  park: "公園2マス・大きな公園4マス・森林公園6マス",
   education: "学校4マス・大学8マス（2×2は建物の端から）",
   health: "病院5マス",
   fire: "消防署5マス",
   transit: "バス停3マス・バスターミナル5マス・新幹線駅7マス",
-  shopping: "コンビニ・スーパー3マス・デパート4マス・複合ビル5マス",
+  shopping: "コンビニ・スーパー3マス・デパート4マス・複合ビル5マス・ランドマークビル6マス・アーケード商店街5マス",
   plaza: "広場3マス",
 };
 
@@ -715,10 +715,10 @@ function MapLegend({ overlay, hasRange }: { overlay: Overlay; hasRange: boolean 
   let title: React.ReactNode;
   let items: React.ReactNode = null;
   if (overlay === "none") {
-    title = "建物は最大4段階に育ちます（4段目の超高層は「市」から）。右下の数字がレベルです。";
+    title = "建物は最大5段階に育ちます（4段目は「市」、5段目は「メガシティ」で大型プロジェクトの近く）。右下の数字がレベルです。";
     items = (
       <>
-        <span>🏠 戸建て → 🏘️ 集合住宅 → 🏢 マンション → 🌇 タワーマンション</span>
+        <span>🏠 戸建て → 🏘️ 集合住宅 → 🏢 マンション → 🌇 タワーマンション → 🌆 超高層レジデンス</span>
         <span>✨ もうすぐ育つ</span>
         <span>⛔ 道路に面していない</span>
         <span>⚠️ 役所まで道路がつながっていない</span>

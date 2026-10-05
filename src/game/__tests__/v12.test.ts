@@ -9,6 +9,11 @@ import { nextLevelChecks } from "../growth";
 import { createNewGame, previewTown } from "../state";
 import { TENDENCY_IDS, TRAIT_IDS, townStory } from "../traits";
 import type { TendencyId, TraitId } from "../types";
+import { voiceCandidates } from "../voices";
+import { cityScore } from "../score";
+import { nextAdvice } from "../advice";
+import { isBuildingUnlocked } from "../progression";
+import { runMonths } from "./bot";
 import { blankState, idx, put, roadRow, unwrap } from "./helpers";
 
 describe("v1.2 エンジン", () => {
@@ -271,5 +276,86 @@ describe("渋滞の対策が効く", () => {
     expect(street("road", true)).toBeLessThan(plain * 0.85);
     expect(street("avenue", false)).toBeLessThan(0.9);
     expect(street("avenue", true)).toBeLessThan(0.55);
+  });
+});
+
+describe("住民の声は、困っている建物の種類に合った内容になる", () => {
+  it("工場が学校の範囲外で育たないとき、子育て中の親の「学校が遠い」は出ず、工場長の声になる", () => {
+    const s = blankState();
+    s.rank = "city";
+    roadRow(s, 8, 1, 14);
+    for (let x = 1; x <= 14; x++) put(s, x, 3, "residential", 2, 50);
+    roadRow(s, 4, 1, 14);
+    for (const x of [10, 11, 12, 13]) {
+      const f = put(s, x, 9, "industrial", 3);
+      s.tiles[f].building!.growth = 90;
+    }
+    const voices = voiceCandidates(s, analyzeCity(s), null);
+    const blocked = voices.filter((v) => v.id === "growthBlocked");
+    expect(blocked.length).toBeGreaterThan(0);
+    for (const v of blocked) {
+      expect(v.text).not.toContain("マンション");
+      expect(v.persona).not.toBe("parent");
+    }
+  });
+
+  it("住宅が学校の範囲外で育たないときは、子育て中の親が学校を求める", () => {
+    const s = blankState();
+    s.rank = "town";
+    roadRow(s, 8, 1, 14);
+    for (const x of [2, 3, 4, 5, 6]) {
+      const h = put(s, x, 9, "residential", 2, 50);
+      s.tiles[h].building!.growth = 90;
+    }
+    put(s, 8, 9, "park");
+    put(s, 9, 9, "commercial", 1);
+    const a = analyzeCity(s);
+    const school = voiceCandidates(s, a, null).find((v) => v.id === "growthBlocked" && v.text.includes("学校"));
+    if (school) expect(school.persona).toBe("parent");
+  });
+});
+
+describe("表示と実際の食い違いの再発防止", () => {
+  it("水道管の破裂：表示する修理費と、実際に減るお金が同じ", () => {
+    const s = createNewGame("W", 4);
+    for (const t of s.tiles) if (t.building?.type === "residential") t.building.occupants = 300; // 大きな町にする
+    s.turn = 30;
+    const before = s.money;
+    const out = advanceMonth(s, { forceEvent: "waterPipe" })!;
+    const item = out.report.events.find((e) => e.title === "水道管が破裂")!;
+    const shown = Number(item.body.match(/修理費 ¥([\d,]+)/)![1].replace(/,/g, ""));
+    // 月の収支を除いた差が、表示した修理費と一致する
+    expect(before + out.report.budget.net - out.state.money).toBe(shown);
+  });
+
+  it("空港の騒音を「工場の騒音」と言わない（空港の端から3マスの住宅）", () => {
+    const s = blankState();
+    s.rank = "metropolis";
+    roadRow(s, 8, 0, 15);
+    put(s, 0, 9, "airport", 1);
+    for (const [x, y] of [[1, 9], [0, 10], [1, 10]]) s.tiles[idx(s, x, y)].building = { ...s.tiles[idx(s, 0, 9)].building!, type: "annex", anchor: idx(s, 0, 9) };
+    put(s, 4, 9, "residential", 1, 14);
+    const noise = voiceCandidates(s, analyzeCity(s), null).find((v) => v.id === "noise");
+    expect(noise?.text).toContain("飛行機");
+  });
+
+  it("街の評価の「伸ばしどころ」は、いまのランクでできることを勧める", () => {
+    const s = createNewGame("S", 2);
+    const pop = cityScore(s, analyzeCity(s)).parts.find((p) => p.id === "population")!;
+    expect(pop.hint).not.toContain("埋め立て");
+    expect(pop.hint).not.toContain("Lv4");
+  });
+
+  it("住民の声・おすすめは、まだ解禁されていない建物を勧めない（自動プレイで確認）", () => {
+    for (const seed of [1, 2]) {
+      let s = createNewGame("B", seed);
+      for (let m = 0; m < 120; m++) {
+        s = runMonths(s, 1);
+        const a = analyzeCity(s);
+        for (const v of voiceCandidates(s, a, s.lastReport)) if (v.tool) expect(isBuildingUnlocked(v.tool, s.rank), `${v.id} → ${v.tool} @${s.rank}`).toBe(true);
+        const adv = nextAdvice(s, a);
+        if (adv?.tool) expect(isBuildingUnlocked(adv.tool, s.rank), `advice ${adv.id} → ${adv.tool}`).toBe(true);
+      }
+    }
   });
 });

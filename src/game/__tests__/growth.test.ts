@@ -69,6 +69,6 @@ describe("建物の成長", () => {
     const { s, home } = niceStreet();
     const checks = nextLevelChecks(s, home, analyzeCity(s))!;
     expect(checks.map((c) => c.label).join()).toContain("満足度");
-    expect(checks[0]).toEqual({ label: "役所まで道路でつながっている", ok: true });
+    expect(checks[0]).toEqual({ key: "connected", label: "役所まで道路でつながっている", ok: true });
   });
 });

@@ -406,8 +406,8 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
 
       const pendingTitle = after.pendingEvent ? getEventDef(after.pendingEvent.eventId)?.title : undefined;
       for (const e of report.events) {
-        if (e.title === pendingTitle) continue; // 選択式イベントはダイアログで表示する
-        if (report.rankUp && e.title.includes("ランクアップ")) continue;
+        if (e.kind === "choiceEvent" || (pendingTitle && e.title === pendingTitle)) continue; // 選択式イベントはダイアログで表示する
+        if (e.kind === "rankUp") continue; // ランクアップは専用の画面で表示する
         toast(`${e.emoji} ${e.title}`, e.tone === "bad" ? "bad" : "good");
       }
       for (const id of report.achievements) {

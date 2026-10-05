@@ -3,6 +3,7 @@
 
 import type { CityAnalysis } from "./analysis";
 import { goalsAchieved } from "./goals";
+import { rankIndex } from "./progression";
 import type { GameState } from "./types";
 
 export interface ScorePart {
@@ -39,7 +40,12 @@ export function cityScore(s: GameState, a: CityAnalysis): CityScore {
       emoji: "👥",
       max: 300,
       value: 300 * clamp01(a.population / 20000),
-      hint: "超高層（Lv4）と埋め立てで、人口2万人を目指そう",
+      hint:
+        rankIndex(s.rank) >= rankIndex("megacity")
+          ? "土地の買い足しと、大型プロジェクトの近くの5段目の建物で、人口2万人を目指そう"
+          : rankIndex(s.rank) >= rankIndex("city")
+            ? "超高層（Lv4）・埋め立てで人口を増やし、人口2万人を目指そう"
+            : "住宅と仕事を増やして、次のランクへ（ランクが上がると高い建物や広い土地が使える）",
     },
     {
       id: "happiness",
@@ -55,7 +61,7 @@ export function cityScore(s: GameState, a: CityAnalysis): CityScore {
       emoji: "🌿",
       max: 150,
       value: 150 * clamp01((a.cityEnvironment - 40) / 45),
-      hint: "工場を住宅から離し、大きな公園を増やそう",
+      hint: rankIndex(s.rank) >= rankIndex("town") ? "工場を住宅から離し、大きな公園を増やそう" : "工場を住宅から離し、公園を増やそう",
     },
     {
       id: "finance",
@@ -71,7 +77,7 @@ export function cityScore(s: GameState, a: CityAnalysis): CityScore {
       emoji: "🚗",
       max: 100,
       value: 100 * clamp01((40 - a.congestion) / 40),
-      hint: "大通り・バス停・バスターミナルで渋滞を減らそう",
+      hint: rankIndex(s.rank) >= rankIndex("city") ? "大通り・バス停・バスターミナルで渋滞を減らそう" : rankIndex(s.rank) >= rankIndex("town") ? "大通り・バス停で渋滞を減らそう" : "並行する道路をつくり、建物の反対側にも道路を通そう",
     },
     {
       id: "employment",

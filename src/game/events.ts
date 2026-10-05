@@ -1,6 +1,7 @@
 // イベントエンジン：街の状態に応じて起きやすさが変わるランダムイベント（うち一部は選択式）。
 
 import type { CityAnalysis } from "./analysis";
+import { noiseSources } from "./environment";
 import { BUILDINGS, capacityAt, isRoad, isZone } from "./buildings";
 import { EVENTS, NEWS_LIMIT } from "./config";
 import { countBuildings, population } from "./map";
@@ -132,7 +133,8 @@ export const EVENT_DEFS: EventDef[] = [
     pickTile: (ctx) =>
       pickBuilding(ctx, (i) => {
         const b = ctx.state.tiles[i].building!;
-        return b.type === "commercial" && b.level >= 1 && b.level < getRank(ctx.state.rank).maxLevel && !b.abandoned && ctx.a.net.connected[i];
+        // 5段目は大型プロジェクトの近くだけなので、イベントでは4段目まで
+        return b.type === "commercial" && b.level >= 1 && b.level < Math.min(4, getRank(ctx.state.rank).maxLevel) && !b.abandoned && ctx.a.net.connected[i];
       }),
     apply: ({ state, tile }) => {
       const b = state.tiles[tile!].building!;
@@ -376,8 +378,9 @@ export const EVENT_DEFS: EventDef[] = [
     message: () => "古い水道管が破裂し、緊急の修理が必要になりました。",
     weight: ({ state }) => (state.turn >= 4 ? 0.5 : 0),
     apply: ({ state }) => {
-      state.money -= scaledCost(state, 150_000);
-      return `修理費 ${yen(150_000)}`;
+      const cost = scaledCost(state, 150_000);
+      state.money -= cost;
+      return `修理費 ${yen(cost)}`;
     },
   },
 
@@ -446,7 +449,10 @@ export const EVENT_DEFS: EventDef[] = [
     title: "住民から騒音苦情",
     emoji: "📢",
     tone: "bad",
-    message: () => "工場の近くに住む住民から「うるさくて眠れない」と苦情が寄せられています。",
+    message: ({ state, tile }) => {
+      const src = tile !== undefined ? noiseSources(state, tile) : { airport: false, factory: true };
+      return src.airport && !src.factory ? "空港の近くに住む住民から「飛行機の音で眠れない」と苦情が寄せられています。" : src.airport ? "工場と空港の近くに住む住民から「うるさくて眠れない」と苦情が寄せられています。" : "工場の近くに住む住民から「うるさくて眠れない」と苦情が寄せられています。";
+    },
     weight: ({ state, a }) => (state.tiles.some((t, i) => t.building?.type === "residential" && t.building.occupants > 0 && a.noise[i] > 5) ? 1.4 : 0),
     pickTile: ({ state, a }) => {
       let best: number | undefined;
@@ -627,10 +633,10 @@ export const EVENT_DEFS: EventDef[] = [
   },
   {
     id: "university",
-    title: "大学キャンパスの誘致",
+    title: "大学のサテライト教室の誘致",
     emoji: "📚",
     tone: "neutral",
-    message: () => "大学が新しいキャンパスの候補地として、この街を検討しています。",
+    message: () => "大学が、街の空きビルにサテライト教室（小さな分校）を開く候補地として、この街を検討しています。（建物の「大学」とは別で、学校の範囲は広がりません）",
     weight: ({ state }) => (rankIndex(state.rank) >= 2 && !state.modifiers.some((m) => m.id === "university") ? 0.8 : 0),
     choices: [
       {
@@ -641,7 +647,7 @@ export const EVENT_DEFS: EventDef[] = [
         apply: ({ state }) => {
           state.money -= scaledCost(state, 1_500_000);
           modify(state, "university", "大学キャンパス", "📚", 24, { resAppeal: 0.1, comDemand: 0.2, happiness: 3 });
-          return "学生たちで街がにぎやかになりました！";
+          return "サテライト教室に学生が集まり、街がにぎやかになりました！";
         },
       },
       { id: "decline", label: "見送る", detail: "変化なし", apply: () => "キャンパスは隣の街に決まりました。" },
@@ -759,7 +765,9 @@ export const EVENT_DEFS: EventDef[] = [
       const covered = state.tiles.reduce((n, t, i) => n + (t.building?.type === "residential" && a.coverage.health[i] > 0 ? t.building.occupants : 0), 0);
       const lost = a.population > 0 && covered / a.population < 0.6 ? loseResidents(state, 0.02) : 0;
       modify(state, "earthquake", "地震からの復興", "🧱", 3, { happiness: -4 });
-      return `${damaged}棟が被害を受けました。${lost > 0 ? `${lost}人が街を離れました（病院が近ければ防げます）。` : "病院と消防署のおかげで被害は抑えられました。"} 満足度 -4（3か月）`;
+      const afterLost = lost > 0 ? `${lost}人が街を離れました（病院が近ければ防げます）。` : "病院が近くにあったので、街を離れる人は出ませんでした。";
+      const fire = damaged === 0 ? "消防署のおかげで、建物の被害はありませんでした。" : `${damaged}棟が被害を受けました（消防署の範囲内なら防げることが多い）。`;
+      return `${fire}${afterLost} 満足度 -4（3か月）`;
     },
   },
   {
@@ -968,7 +976,7 @@ export function rollEvent(draft: GameState, a: CityAnalysis, rng: Rng, force?: s
     if (def.choices) {
       const targetBuilding = tile !== undefined ? draft.tiles[tile]?.building : undefined;
       draft.pendingEvent = { eventId: def.id, turn: draft.turn, tile, targetType: targetBuilding?.type, targetBuilt: targetBuilding?.builtTurn };
-      const item: NewsItem = { turn: draft.turn, emoji: def.emoji, title: def.title, body: message, tone: def.tone, tile };
+      const item: NewsItem = { turn: draft.turn, emoji: def.emoji, title: def.title, body: message, tone: def.tone, tile, kind: "choiceEvent" };
       return item;
     }
     const result = def.apply ? def.apply(ectx) : "";

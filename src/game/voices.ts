@@ -8,7 +8,8 @@ import { ECONOMY, GROWTH } from "./config";
 import { getEra } from "./eras";
 import { formatYen } from "./format";
 import { nextLevelChecks } from "./growth";
-import { forEachInRadius, isUnlockedTile, neighbors4 } from "./map";
+import { noiseSources } from "./environment";
+import { isUnlockedTile, neighbors4 } from "./map";
 import { getRank, isBuildingUnlocked, rankIndex } from "./progression";
 import type { Rng } from "./rng";
 import type { BuildingType, GameState, MonthReport, Tone, Voice } from "./types";
@@ -94,7 +95,27 @@ function facilityHint(type: BuildingType, a: CityAnalysis, base: string): { hint
   return { hint, affordable };
 }
 
-/** 成長を止めている条件を集計する */
+/** 住民の声で知らせる「成長を止めている条件」（建物の種類:条件の種類）。ランク・入居率・道路などはほかの声やチェックリストで伝える */
+const BLOCKER_KEYS = new Set<string>([
+  "residential:school",
+  "residential:transit",
+  "residential:happiness",
+  "residential:env",
+  "residential:project",
+  "commercial:efficiency",
+  "commercial:catchment",
+  "commercial:workers",
+  "commercial:traffic",
+  "commercial:transit",
+  "commercial:project",
+  "industrial:efficiency",
+  "industrial:workers",
+  "industrial:traffic",
+  "industrial:school",
+  "industrial:project",
+]);
+
+/** 成長を止めている条件を、建物の種類ごとに集計する（いちばん多いものを返す） */
 function growthBlockers(state: GameState, a: CityAnalysis): { key: string; count: number; tile: number } | null {
   const maxLevel = getRank(state.rank).maxLevel;
   const counts = new Map<string, { count: number; tile: number }>();
@@ -104,22 +125,8 @@ function growthBlockers(state: GameState, a: CityAnalysis): { key: string; count
     if (b.growth < GROWTH.threshold[b.level] * 0.5) return;
     for (const c of nextLevelChecks(state, i, a) ?? []) {
       if (c.ok) continue;
-      const key = c.label.includes("学校")
-        ? "school"
-        : c.label.includes("バス停")
-          ? "transit"
-          : c.label.includes("満足度")
-            ? "happiness"
-            : c.label.includes("環境")
-              ? "env"
-              : c.label.includes("お客さん")
-                ? "customers"
-                : c.label.includes("働き手") || c.label.includes("人手")
-                  ? "workers"
-                  : c.label.includes("渋滞")
-                    ? "traffic"
-                    : null;
-      if (!key) continue;
+      const key = `${b.type}:${c.key}`;
+      if (!BLOCKER_KEYS.has(key)) continue;
       const cur = counts.get(key) ?? { count: 0, tile: i };
       cur.count++;
       counts.set(key, cur);
@@ -193,10 +200,8 @@ export function voiceCandidates(state: GameState, a: CityAnalysis, report: Month
     if (noisiest < 0 || a.noise[i] > a.noise[noisiest]) noisiest = i;
   });
   if (noisiest >= 0) {
-    let airport = false;
-    forEachInRadius(noisiest, 3, state.width, state.height, (j) => {
-      if (state.tiles[j].building?.type === "airport") airport = true;
-    });
+    const src = noiseSources(state, noisiest);
+    const airport = src.airport && !src.factory;
     const share = pop > 0 ? noisyPeople / pop : 0;
     out.push({
       id: "noise",
@@ -204,13 +209,15 @@ export function voiceCandidates(state: GameState, a: CityAnalysis, report: Month
       tone: "bad",
       persona: "resident",
       text: airport ? "飛行機の音がうるさくて眠れない！" : "工場の騒音がひどい！夜も眠れない。",
-      hint: airport ? "空港のまわり3マスには住宅を建てないようにしよう" : "騒音は工場から2マス先まで届く。住宅と工場は3マス以上はなすか、間に大きな公園を置こう（騒音が半分に）",
+      hint: airport
+        ? "空港のまわり3マスには住宅を建てないようにしよう"
+        : `騒音は工場から2マス先まで届く。住宅と工場は3マス以上はなそう${rank >= 1 ? "（間に大きな公園を置くと騒音が半分に）" : ""}${src.airport ? "。空港の音も届いている" : ""}`,
       tile: noisiest,
     });
   }
   const dirty = worstResidential(state, (i) => a.env[i] < 45);
   if (dirty.tile !== undefined) {
-    out.push({ id: "pollution", tool: "park", severity: 25 + dirty.share * 40, tone: "bad", persona: tendency === "eco" ? "parent" : "resident", text: "最近、空気が悪い気がする…。", hint: "工場の煙は3マス先まで届く。工場から離すか、公園を増やそう", tile: dirty.tile });
+    out.push({ id: "pollution", tool: "park", severity: 25 + dirty.share * 40, tone: "bad", persona: tendency === "eco" ? "parent" : "resident", text: "最近、空気が悪い気がする…。", hint: "工場・空港・コンビナートの煙は3マス先まで届く。離して建てるか、公園を増やそう", tile: dirty.tile });
   }
 
   // ---------- 公共施設（序盤は高い施設を一斉に求めない） ----------
@@ -291,17 +298,31 @@ export function voiceCandidates(state: GameState, a: CityAnalysis, report: Month
   const blocked = growthBlockers(state, a);
   if (blocked) {
     const n = blocked.count;
-    const map: Record<string, { text: string; hint: string; tool?: BuildingType; persona: keyof typeof PERSONAS }> = {
-      school: { persona: "parent", text: `マンションに建て替えたいのに、学校が遠くて…（${n}棟が待っているよ）`, hint: "学校（範囲4マス）や大学（範囲8マス）の近くの住宅がマンションに育つ", tool: "school" },
-      transit: { persona: "worker", text: `タワーマンションや複合ビルは、バス停かバスターミナルが近くにないと建たないんだって（${n}棟）`, hint: "バス停（範囲3マス）やバスターミナル（範囲5マス）を置こう", tool: isBuildingUnlocked("busStop", state.rank) ? "busStop" : "road" },
-      happiness: { persona: "resident", text: `住みやすさが足りなくて、家を大きくできないみたい（${n}棟）`, hint: "公園・学校・病院の範囲を広げ、騒音や渋滞を減らそう", tool: rank >= 1 ? "bigPark" : "park" },
-      env: { persona: "resident", text: `空気が悪くて、大きな家が建たないみたい（${n}棟）`, hint: "工場から離すか、公園を増やして空気をきれいにしよう", tool: "park" },
-      customers: { persona: "shop", text: `お客さんが足りなくて、お店を大きくできないよ（${n}棟）`, hint: "住宅を増やしてお客さんを呼ぼう", tool: "residential" },
-      workers: { persona: "factory", text: `人手が足りなくて、建物を大きくできないんだ（${n}棟）`, hint: "住宅を増やして働き手を呼ぼう", tool: "residential" },
-      traffic: { persona: "shop", text: `前の道が渋滞していて、建物を大きくできないよ（${n}棟）`, hint: "大通りやバス停で渋滞を減らそう", tool: isBuildingUnlocked("avenue", state.rank) ? "avenue" : "road" },
+    const busTool: BuildingType = isBuildingUnlocked("busStop", state.rank) ? "busStop" : "road";
+    // 止まっているのが5段目への成長かどうか（建物の名前を合わせる）
+    const next5 = (state.tiles[blocked.tile]?.building?.level ?? 0) >= 4;
+    const roadTool: BuildingType = isBuildingUnlocked("avenue", state.rank) ? "avenue" : "road";
+    const projectHint = "新幹線駅・大学・空港などの大型プロジェクトから6マス以内なら5段目に育つ（メガシティからは2つずつ建てられる）";
+    const map: Record<string, { text: string; hint: string; tool?: BuildingType; openTab?: "finance"; persona: keyof typeof PERSONAS }> = {
+      "residential:school": { persona: "parent", text: `マンションに建て替えたいのに、学校が遠くて…（${n}棟が待っているよ）`, hint: rank >= 2 ? "学校（範囲4マス）や大学（範囲8マス）の近くの住宅がマンションに育つ" : "学校（範囲4マス）の近くの住宅がマンションに育つ", tool: "school" },
+      "residential:transit": { persona: "worker", text: `${next5 ? "超高層レジデンス" : "タワーマンション"}を建てたいのに、近くにバス停がないんだって（${n}棟）`, hint: "バス停（範囲3マス）やバスターミナル（範囲5マス）の近くの住宅が大きく育つ", tool: busTool },
+      "commercial:catchment": { persona: "shop", text: `大きなお店にしたいけど、周りに住む人が少なくて…（${n}棟）`, hint: "お店の周り4マスに住宅を増やそう。⛲広場の近くなら必要な人数が半分になる", tool: isBuildingUnlocked("plaza", state.rank) ? "plaza" : "residential" },
+      "residential:happiness": { persona: "resident", text: `住みやすさが足りなくて、家を大きくできないみたい（${n}棟）`, hint: "公園・学校・病院の範囲を広げ、騒音や渋滞を減らそう", tool: rank >= 1 ? "bigPark" : "park" },
+      "residential:env": { persona: "resident", text: `空気が悪くて、大きな家が建たないみたい（${n}棟）`, hint: "工場から離すか、公園を増やして空気をきれいにしよう", tool: "park" },
+      "residential:project": { persona: "resident", text: `超高層レジデンスは、大きな施設の近くにしか建たないんだって（${n}棟）`, hint: projectHint },
+      "commercial:efficiency": { persona: "shop", text: `お客さんが足りなくて、お店を大きくできないよ（${n}棟）`, hint: "住宅を増やしてお客さんを呼ぼう", tool: "residential" },
+      "commercial:workers": { persona: "shop", text: `人手が足りなくて、お店を大きくできないんだ（${n}棟）`, hint: "住宅を増やして働き手を呼ぼう", tool: "residential" },
+      "commercial:traffic": { persona: "shop", text: `お店の前の道が渋滞していて、大きくできないよ（${n}棟）`, hint: "混んでいる道路をタップすると原因がわかる。大通りやバス停で渋滞を減らそう", tool: roadTool },
+      "commercial:transit": { persona: "shop", text: `大きなビルにしたいけど、バス停がなくて通勤客が来られないんだ（${n}棟）`, hint: "バス停（範囲3マス）やバスターミナル（範囲5マス）の近くのお店が複合ビルに育つ", tool: busTool },
+      "commercial:project": { persona: "shop", text: `ランドマークビルは、大きな施設の近くにしか建たないんだって（${n}棟）`, hint: projectHint },
+      "industrial:efficiency": { persona: "factory", text: `注文が足りなくて、工場を大きくできないんだ（${n}棟）`, hint: "工業税を少し下げるか、工場の数を見直そう（工場が多すぎると注文が分かれる）", openTab: "finance" },
+      "industrial:workers": { persona: "factory", text: `人手が足りなくて、工場を大きくできないんだ（${n}棟）`, hint: "住宅を増やして働き手を呼ぼう", tool: "residential" },
+      "industrial:traffic": { persona: "factory", text: `工場の前の道が渋滞していて、トラックが動けないよ（${n}棟）`, hint: "混んでいる道路をタップすると原因がわかる。大通りにする・建物の反対側にも道路を通そう", tool: roadTool },
+      "industrial:school": { persona: "factory", text: `技術者が集まらなくて、${next5 ? "先端研究所" : "ハイテク工場"}にできないんだ。近くに学校があればなあ（${n}棟）`, hint: rank >= 2 ? "工場から4マス以内に学校、8マス以内に大学があると、大きく育つ" : "工場から4マス以内に学校があると、大きく育つ", tool: "school" },
+      "industrial:project": { persona: "factory", text: `先端研究所は、大きな施設の近くにしか建たないんだって（${n}棟）`, hint: projectHint },
     };
     const m = map[blocked.key];
-    if (m) out.push({ id: "growthBlocked", severity: 30 + Math.min(40, n * 2), tone: "bad", persona: m.persona, text: m.text, hint: m.hint, tool: m.tool, tile: blocked.tile });
+    if (m) out.push({ id: "growthBlocked", severity: 30 + Math.min(40, n * 2), tone: "bad", persona: m.persona, text: m.text, hint: m.hint, tool: m.tool, openTab: m.openTab, tile: blocked.tile });
   }
   if (a.demand.residential > 20 && buildableLots(state, a) === 0) {
     out.push({
@@ -327,14 +348,15 @@ export function voiceCandidates(state: GameState, a: CityAnalysis, report: Month
   if (abandoned >= 0) {
     const type = state.tiles[abandoned].building!.type;
     const what = type === "residential" ? "空き家" : type === "commercial" ? "空き店舗" : "空き工場";
-    out.push({ id: "abandoned", severity: 30, tone: "bad", persona: "elder", text: `${what}が増えてきて、さみしいねえ。`, hint: "まわりの住みやすさを上げると戻る。建て替えや撤去もできる", tile: abandoned });
+    const comeBack = type === "residential" ? "まわりの住みやすさを上げると人が戻る" : type === "commercial" ? "お客さん（住宅）と働き手が足りれば、お店が戻る" : "工場の注文と働き手が足りれば、工場が戻る";
+    out.push({ id: "abandoned", severity: 30, tone: "bad", persona: "elder", text: `${what}が増えてきて、さみしいねえ。`, hint: `${comeBack}。建て替えや撤去もできる`, tile: abandoned });
   }
 
   // ---------- 時代の流れ（予告は節目の月だけ） ----------
   const next = state.era.next;
   if (next?.announced && next.turn > state.turn && [12, 6, 3, 1].includes(next.turn - state.turn)) {
     const e = getEra(next.id);
-    out.push({ id: "eraSoon", severity: 36, tone: "neutral", persona: "worker", text: `あと${next.turn - state.turn}か月で「${e.name}の時代」が来るらしいよ。`, hint: e.tips[0] });
+    out.push({ id: "eraSoon", severity: 36, tone: "neutral", persona: "worker", text: `あと${next.turn - state.turn}か月で「${e.name}の時代」が来るらしいよ。`, hint: e.description });
   }
   if (report?.eraChange) {
     const e = getEra(report.eraChange);

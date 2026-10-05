@@ -164,19 +164,19 @@ export function BuildMenu() {
 }
 
 /** PC：地図の左に縦に並べるパレット（種類ごとにまとめて2列） */
-const PALETTE_GROUPS: Array<{ label: string; note?: string; ids: Tool[] }> = [
+const PALETTE_GROUPS: Array<{ label: string; note?: string; ids: Tool[]; projects?: boolean }> = [
   { label: "操作", ids: ["inspect", "bulldoze", "reclaim"] },
   { label: "道路", note: "建物は道路に面していないと使えない", ids: ["road", "avenue"] },
   { label: "住む・働く場所（民間）", note: "土地を用意すると住民や会社が建てて育てる。維持費なし", ids: ["residential", "commercial", "industrial"] },
   { label: "町の施設", note: "町のお金で建て、毎月維持費を払う。範囲内の住民が喜ぶ", ids: ["park", "bigPark", "school", "hospital", "fireStation", "busStop", "plaza", "station", "landmark"] },
-  { label: "大型プロジェクト（2×2）", note: "数か月の工事で完成し、街全体が変わる。1つの街に1つずつ", ids: [] },
+  { label: "大型プロジェクト（2×2）", note: "数か月の工事で完成し、街全体が変わる。1つの街に1つずつ（メガシティで2つずつ）", ids: [], projects: true },
 ];
 
 export function BuildPalette() {
   const { tool, setTool } = useGame();
   const { state } = useCity();
   const tools = useTools();
-  const groups = withProjects(PALETTE_GROUPS, (g) => g.label.startsWith("大型"), projectsFor(state.profile.trait));
+  const groups = withProjects(PALETTE_GROUPS, (g) => !!g.projects, projectsFor(state.profile.trait));
   const current = tools.find((t) => t.id === tool);
 
   return (

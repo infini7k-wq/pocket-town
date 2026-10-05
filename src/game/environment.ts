@@ -88,6 +88,26 @@ export function computeNoise(state: GameState, fx: Effects): number[] {
   return noise.map((v) => v * (1 - fx.noiseShield));
 }
 
+/** そのマスに騒音を届けているもの（空港などの大型施設か、工場か） */
+export function noiseSources(state: GameState, i: number): { airport: boolean; factory: boolean } {
+  let airport = false;
+  let factory = false;
+  state.tiles.forEach((t, j) => {
+    const b = t.building;
+    if (!b || b.abandoned || b.level === 0) return;
+    if (BUILDINGS[b.type].noise) {
+      forEachInRange(j, BUILDINGS[b.type].size ?? 1, 3, state.width, state.height, (k) => {
+        if (k === i) airport = true;
+      });
+    } else if (b.type === "industrial" && (INDUSTRIAL_NOISE[b.level] ?? 0) > 0) {
+      forEachInRadius(j, 2, state.width, state.height, (k) => {
+        if (k === i && k !== j) factory = true;
+      });
+    }
+  });
+  return { airport, factory };
+}
+
 /** 街全体の環境値：建物のあるマスの平均 */
 export function cityEnvironment(state: GameState, env: number[]): number {
   let sum = 0;

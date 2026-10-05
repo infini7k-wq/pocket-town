@@ -138,6 +138,8 @@ export interface NewsItem {
   body: string;
   tone: Tone;
   tile?: number;
+  /** ニュースの種類（表示の出し分けに使う。文言や絵文字で判定しないため） */
+  kind?: "eraNotice" | "rankUp" | "choiceEvent";
 }
 
 export interface Voice {

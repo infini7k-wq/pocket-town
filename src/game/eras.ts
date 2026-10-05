@@ -158,6 +158,7 @@ export function advanceEra(draft: GameState, rng: Rng): string | null {
     pushNews(draft, {
       turn: draft.turn,
       emoji: "📢",
+      kind: "eraNotice",
       title: `予告：${Math.max(1, next.turn - draft.turn)}か月後に「${e.name}の時代」へ`,
       body: `${e.description} 備え：${e.tips.join("／")}`,
       tone: "neutral",
