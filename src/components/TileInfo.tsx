@@ -24,6 +24,13 @@ import {
   nextLevelChecks,
   roadCapacity,
   toXY,
+  anchorOf,
+  buildingEmoji,
+  footprint,
+  neighbors4,
+  tripsFor,
+  type CityAnalysis,
+  type GameState,
   type BuildingType,
   type CoverageKind,
 } from "@/game";
@@ -66,6 +73,24 @@ function Meter({ label, value, max = 100 }: { label: string; value: number; max?
       <ProgressBar value={v / max} className="mt-0.5 h-1.5" color={color} />
     </div>
   );
+}
+
+/** 道路のとなりにある建物のうち、この道路に多く車を出しているもの（上位3つ） */
+function trafficSources(state: GameState, a: CityAnalysis, road: number) {
+  const seen = new Set<number>();
+  const out: Array<{ tile: number; emoji: string; name: string; trips: number; roads: number; transit: boolean }> = [];
+  for (const j of neighbors4(road, state.width, state.height)) {
+    const anchor = anchorOf(state, j);
+    const b = state.tiles[anchor]?.building;
+    if (!b || isRoad(b.type) || seen.has(anchor)) continue;
+    seen.add(anchor);
+    const trips = tripsFor(state, anchor, a.employment, a.coverage, a.fx);
+    if (trips <= 0) continue;
+    const cells = BUILDINGS[b.type].size === 2 ? footprint(anchor, state.width) : [anchor];
+    const roads = new Set(cells.flatMap((c) => neighbors4(c, state.width, state.height)).filter((k) => isRoad(state.tiles[k].building?.type))).size;
+    out.push({ tile: anchor, emoji: buildingEmoji(b.type, b.level), name: levelName(b.type, b.level), trips: trips / Math.max(1, roads), roads, transit: a.coverage.transit[anchor] > 0 });
+  }
+  return out.sort((p, q) => q.trips - p.trips).slice(0, 3);
 }
 
 export function TileInfo({ onClose }: { onClose: () => void }) {
@@ -135,6 +160,7 @@ export function TileInfo({ onClose }: { onClose: () => void }) {
   } else if (isRoad(b.type)) {
     const cap = roadCapacity(b.type);
     const lv = a.traffic.level[i];
+    const sources = trafficSources(state, a, i);
     body = (
       <>
         {header(b.type === "avenue" ? BUILDINGS.avenue.emoji[1] : "🛣️", BUILDINGS[b.type].name, `(${x}, ${y})`)}
@@ -147,7 +173,34 @@ export function TileInfo({ onClose }: { onClose: () => void }) {
           </Row>
           <Row label="役所への接続">{a.net.connected[i] ? <span className="text-emerald-600">✓ つながっている</span> : <span className="text-rose-600">✗ つながっていない</span>}</Row>
           <Row label="維持費">{formatYen(BUILDINGS[b.type].upkeep)}/月</Row>
-          {lv === 3 && <p className="mt-1 rounded-xl bg-rose-50 p-2 text-[11px] font-bold text-rose-700">💡 並行する道路を作る・{state.rank === "village" ? "町になると大通りやバス停が使えます" : "大通りに置き換える・バス停を置く"}</p>}
+          {sources.length > 0 && (
+            <div className="mt-2">
+              <div className="text-[11px] font-bold text-slate-500">この道路に車を出している建物（となりのマス）</div>
+              <ul className="mt-1 space-y-0.5">
+                {sources.map((src) => (
+                  <li key={src.tile} className="flex items-center justify-between text-[11px] font-bold text-slate-700">
+                    <span>
+                      {src.emoji} {src.name}
+                      {src.roads > 1 && <span className="ml-1 text-slate-400">（{src.roads}本の道路に分散）</span>}
+                      {src.transit && <span className="ml-1 text-emerald-600">🚏</span>}
+                    </span>
+                    <span className="tabular">{Math.round(src.trips)}台</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {lv >= 2 && (
+            <div className="mt-2 rounded-xl bg-rose-50 p-2 text-[11px] font-bold leading-relaxed text-rose-700">
+              <div>💡 渋滞の減らし方</div>
+              <ul className="mt-0.5 list-disc pl-4">
+                <li>車は建物のとなりの道路にだけ出る。建物の反対側にも道路を通すと、車が分かれる</li>
+                <li>{state.rank === "village" ? "町になると大通り（道路の約2.5倍）が使える" : "大通りに置き換える（道路の約2.5倍の車が通れる）"}</li>
+                <li>{state.rank === "village" ? "町になるとバス停が使える（範囲内の車が最大5割減）" : "バス停・バスターミナルの範囲に入れると、範囲内の建物の車が4〜5割減る（施設は道路に面して置く）"}</li>
+                <li>交差する道路を増やすと、車がほかの道路に流れる</li>
+              </ul>
+            </div>
+          )}
         </div>
       </>
     );

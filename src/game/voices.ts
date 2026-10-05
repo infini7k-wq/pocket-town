@@ -252,7 +252,7 @@ export function voiceCandidates(state: GameState, a: CityAnalysis, report: Month
       tone: "bad",
       persona: "worker",
       text: "朝の渋滞がひどくて会社に遅刻しそう。",
-      hint: rank >= 1 ? "並行する道路・大通り・バス停で車を分散しよう" : "並行する道路をつくろう（「町」になると大通りとバス停が使える）",
+      hint: rank >= 1 ? "「場所を見る」で混んでいる道路を調べると、車を出している建物がわかる。大通り・バス停の範囲・建物の反対側の道路で減らそう" : "建物の反対側にも道路を通すと車が分かれる（「町」になると大通りとバス停が使える）",
       tile: worst >= 0 ? worst : undefined,
     });
   }

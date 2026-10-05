@@ -126,17 +126,18 @@ export const INDUSTRIAL_NOISE = [0, 6, 9, 12, 5, 4];
 // ---------- 交通 ----------
 export const TRAFFIC = {
   perResident: 0.3,
-  perComWorker: 0.7,
-  perIndWorker: 1.0,
+  /** 従業員1人あたりの交通量（レベル別）。大きなオフィスや先端工場は電車・バス通勤が多く、トラックも少ない */
+  perComWorker: [0, 0.7, 0.7, 0.6, 0.45, 0.4],
+  perIndWorker: [0, 1.0, 1.0, 0.9, 0.55, 0.45],
   perService: 4,
   /** 道路1マスの容量 */
   roadCapacity: 70,
   avenueCapacity: 180,
   /** 拡散の反復回数と割合（渋滞が道路網に広がる） */
-  diffuseIterations: 4,
+  diffuseIterations: 8,
   diffuseShare: 0.5,
-  /** 公共交通の範囲内で減る交通量の最大割合 */
-  transitReduction: 0.4,
+  /** 公共交通の範囲内で減る交通量の最大割合（範囲内ならどこでも、この8割以上は効く） */
+  transitReduction: 0.5,
   mediumAt: 0.55,
   highAt: 0.9,
   /** 渋滞している道路に面した商業・工業の効率 */

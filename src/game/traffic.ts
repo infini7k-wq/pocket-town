@@ -37,11 +37,13 @@ export function tripsFor(state: GameState, i: number, emp: Employment, coverage:
   if (!b || b.abandoned) return 0;
   let trips = 0;
   if (b.type === "residential") trips = b.occupants * TRAFFIC.perResident;
-  else if (b.type === "commercial") trips = emp.workersAt[i] * TRAFFIC.perComWorker;
-  else if (b.type === "industrial") trips = emp.workersAt[i] * TRAFFIC.perIndWorker;
+  else if (b.type === "commercial") trips = emp.workersAt[i] * (TRAFFIC.perComWorker[b.level] ?? 0.7);
+  else if (b.type === "industrial") trips = emp.workersAt[i] * (TRAFFIC.perIndWorker[b.level] ?? 1);
   else if (b.type !== "road" && b.type !== "avenue" && b.type !== "annex" && b.level > 0) trips = BUILDINGS[b.type].trips ?? TRAFFIC.perService;
+  // 公共交通：範囲の端でも8割以上効く（満足度の効果のように端で半分にはしない）
   const transit = coverage.transit[i] ?? 0;
-  return trips * (1 - TRAFFIC.transitReduction * transit) * Math.max(0.2, 1 + fx.traffic);
+  const ride = transit > 0 ? 0.6 + 0.4 * Math.min(1, transit) : 0;
+  return trips * (1 - TRAFFIC.transitReduction * ride) * Math.max(0.2, 1 + fx.traffic);
 }
 
 export function computeTraffic(state: GameState, emp: Employment, coverage: CoverageMap, fx: Effects): TrafficResult {

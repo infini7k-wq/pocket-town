@@ -239,3 +239,37 @@ describe("メガシティの先（土地の買い足し・5段目・2つ目の�
     expect(label().ok).toBe(true);
   });
 });
+
+describe("渋滞の対策が効く", () => {
+  const street = (road: "road" | "avenue", terminal: boolean) => {
+    const s = blankState();
+    s.rank = "megacity";
+    for (let x = 1; x <= 14; x++) put(s, x, 8, road);
+    for (let x = 2; x <= 13; x++) {
+      put(s, x, 7, "industrial", 4);
+      put(s, x, 9, "industrial", 4);
+    }
+    roadRow(s, 3, 1, 14);
+    roadRow(s, 13, 1, 14);
+    for (let y = 3; y <= 13; y++) put(s, 1, y, "road");
+    for (let x = 1; x <= 14; x++) {
+      put(s, x, 2, "residential", 4, 220);
+      put(s, x, 14, "residential", 4, 220);
+    }
+    if (terminal) {
+      put(s, 7, 12, "station");
+      put(s, 7, 4, "station");
+    }
+    const a = analyzeCity(s);
+    let max = 0;
+    for (let x = 2; x <= 13; x++) max = Math.max(max, a.traffic.ratio[idx(s, x, 8)]);
+    return max;
+  };
+
+  it("工場が並ぶ通りも、バスターミナルで減り、大通りにすれば渋滞しない", () => {
+    const plain = street("road", false);
+    expect(street("road", true)).toBeLessThan(plain * 0.85);
+    expect(street("avenue", false)).toBeLessThan(0.9);
+    expect(street("avenue", true)).toBeLessThan(0.55);
+  });
+});
