@@ -3,6 +3,7 @@ import { analyzeCity } from "../analysis";
 import { enactPolicy, policyLevelCap, policySlots, revokePolicy, POLICY_DEFS } from "../policies";
 import { approvalTarget, choosePromise, initPolitics, makePromiseOffers, processPolitics, shouldOfferPromise } from "../politics";
 import { createRng } from "../rng";
+import { mayorTitle } from "../progression";
 import { advanceMonth } from "../simulation";
 import { createNewGame } from "../state";
 import { weatherAt, weatherOf, seasonOf } from "../weather";
@@ -143,5 +144,29 @@ describe("季節と天気", () => {
     while (weatherAt(s, turn) !== "heavySnow") turn++;
     s.turn = turn;
     expect(analyzeCity(s).budget.expense.snow).toBeGreaterThan(0);
+  });
+});
+
+describe("ランクに合わせた呼び名", () => {
+  it("村のうちは「村長」、町は「町長」、市から上は「市長」", () => {
+    expect(mayorTitle("village")).toBe("村長");
+    expect(mayorTitle("town")).toBe("町長");
+    expect(mayorTitle("city")).toBe("市長");
+    expect(mayorTitle("megacity")).toBe("市長");
+  });
+
+  it("始めたときのニュースは、村なので「村長」", () => {
+    const s = createNewGame("N", 1);
+    expect(s.rank).toBe("village");
+    expect(s.news[0].title).toContain("村長");
+    expect(s.news.some((n) => n.title.includes("町長"))).toBe(false);
+  });
+
+  it("選挙のニュースもランクに合わせる（市なら市長選挙）", () => {
+    const s = rich();
+    s.rank = "city";
+    s.politics = { ...initPolitics(0), approval: 80, nextElection: s.turn };
+    processPolitics(s, analyzeCity(s), createRng(1));
+    expect(s.news[0].title).toContain("市長選挙");
   });
 });

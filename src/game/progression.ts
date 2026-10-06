@@ -8,6 +8,16 @@ export function getRank(id: RankId): RankDef {
   return RANKS.find((r) => r.id === id) ?? RANKS[0];
 }
 
+/** ランクに合わせた長の呼び名（村長・町長・市長） */
+export function mayorTitle(rank: RankId): string {
+  return rank === "village" ? "村長" : rank === "town" ? "町長" : "市長";
+}
+
+/** ランクに合わせた街の呼び名（村・町・市） */
+export function placeWord(rank: RankId): string {
+  return rank === "village" ? "村" : rank === "town" ? "町" : "市";
+}
+
 export function rankIndex(id: RankId): number {
   return RANKS.findIndex((r) => r.id === id);
 }

@@ -25,6 +25,7 @@ import {
   revokePolicy,
   shouldOfferPromise,
   WIN_LINE,
+  mayorTitle,
   type PolicyCategory,
   type PolicyDef,
 } from "@/game";
@@ -64,14 +65,14 @@ function ElectionCard() {
   const pol = state.politics;
   if (pol === undefined) {
     return (
-      <Card title="次の町長選挙" icon="🗳️">
+      <Card title={`次の${mayorTitle(state.rank)}選挙`} icon="🗳️">
         <p className="text-xs font-bold text-slate-500">翌月から支持率の集計が始まります。</p>
       </Card>
     );
   }
   if (pol === null) {
     return (
-      <Card title="町長選挙" icon="🗳️">
+      <Card title={`${mayorTitle(state.rank)}選挙`} icon="🗳️">
         <p className="text-xs font-bold text-slate-500">チャレンジ中は選挙がありません（結果が出たあと、3年後に最初の選挙）。条例は使えます。</p>
       </Card>
     );
@@ -83,7 +84,7 @@ function ElectionCard() {
   const c = pol.campaign;
   const promise = c?.promise;
   return (
-    <Card title="次の町長選挙" icon="🗳️" action={<span className="text-[11px] font-bold text-slate-400">{pol.term}期目</span>}>
+    <Card title={`次の${mayorTitle(state.rank)}選挙`} icon="🗳️" action={<span className="text-[11px] font-bold text-slate-400">{pol.term}期目</span>}>
       <div className="flex items-end justify-between gap-2">
         <div>
           <div className="text-[11px] font-bold text-slate-500">支持率</div>
@@ -152,7 +153,7 @@ function ElectionCard() {
           前回：{pol.lastResult.won ? "当選" : "落選"}（{pol.lastResult.vote >= 100 ? "無投票" : `得票率 ${pol.lastResult.vote}%`}）
         </div>
       )}
-      {pol.opposition > 0 && <p className="mt-2 rounded-xl bg-slate-100 p-2 text-[11px] font-bold text-slate-600">⏸ 新町長の方針：あと{pol.opposition}か月は条例の枠が1つ減り、制定費が2倍</p>}
+      {pol.opposition > 0 && <p className="mt-2 rounded-xl bg-slate-100 p-2 text-[11px] font-bold text-slate-600">⏸ 新しい{mayorTitle(state.rank)}の方針：あと{pol.opposition}か月は条例の枠が1つ減り、制定費が2倍</p>}
       {state.history.length > 2 && <ApprovalNote />}
     </Card>
   );

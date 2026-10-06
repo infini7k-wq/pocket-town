@@ -251,8 +251,8 @@ export function createNewGame(townName: string, seed: number = randomSeed(), opt
       {
         turn: 0,
         emoji: "🎉",
-        title: "新しい町長が就任しました",
-        body: "小さな町を、あなたの判断で育てていきましょう。",
+        title: "新しい村長が就任しました",
+        body: "小さな村を、あなたの判断で育てていきましょう。",
         tone: "good",
       },
     ],

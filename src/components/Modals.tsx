@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { cityScore, describeEffects, describePendingEvent, formatDate, formatNumber, formatYen, getEra, getRank, getScenario, goalsAchieved, unlocksForRank } from "@/game";
+import { cityScore, describeEffects, describePendingEvent, formatDate, formatNumber, formatYen, getEra, getRank, getScenario, goalsAchieved, mayorTitle, placeWord, unlocksForRank } from "@/game";
 import { useCity, useGame } from "./GameProvider";
 import { Button, Modal, cx } from "./ui";
 
@@ -300,8 +300,9 @@ const EXAMPLE_ROWS = ["🏠🏠🌳🏠🏠🏪🏠", "🛣️🛣️🛣️🛣
 type HelpPage = "start" | "placement" | "range";
 
 export function HelpModal() {
-  const { helpOpen, setHelpOpen } = useGame();
+  const { helpOpen, setHelpOpen, state } = useGame();
   const [page, setPage] = useState<HelpPage>("start");
+  const rank = state?.rank ?? "village";
   if (!helpOpen) return null;
   const pages: Array<{ id: HelpPage; label: string }> = [
     { id: "start", label: "🔰 はじめに" },
@@ -314,8 +315,8 @@ export function HelpModal() {
         <div className="text-4xl" aria-hidden>
           🏘️
         </div>
-        <h2 className="mt-1 text-xl font-black">ようこそ、町長さん！</h2>
-        <p className="text-sm font-bold text-white/90">小さな町を、あなたの判断で育てましょう。</p>
+        <h2 className="mt-1 text-xl font-black">ようこそ、{mayorTitle(rank)}さん！</h2>
+        <p className="text-sm font-bold text-white/90">小さな{placeWord(rank)}を、あなたの判断で育てましょう。</p>
       </div>
       <div className="flex gap-1 border-b border-slate-100 px-4 pt-3" role="tablist">
         {pages.map((p) => (

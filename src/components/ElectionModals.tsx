@@ -99,7 +99,7 @@ export function ElectionResultModal() {
             </>
           ) : (
             <>
-              <li>町長は続けられるが、条例はすべて取り消された</li>
+              <li>街づくりは続けられるが、条例はすべて取り消された</li>
               {opposition && <li>1年間は条例の枠が1つ減り、制定費が2倍</li>}
               <li>4年後の選挙で返り咲こう</li>
             </>

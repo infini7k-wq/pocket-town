@@ -1,8 +1,8 @@
-// 支持率と選挙：4年ごと（4月）に町長選挙。12か月前に公約を選び、支持率と公約の達成で当落が決まる。
+// 支持率と選挙：4年ごと（4月）に選挙（ランクに合わせて村長・町長・市長選挙）。12か月前に公約を選び、支持率と公約の達成で当落が決まる。
 // 落選してもゲームオーバーにはしない（条例が白紙になり、しばらく「新町長の方針」で動きにくくなる）。
 
 import type { CityAnalysis } from "./analysis";
-import { getRank } from "./progression";
+import { getRank, mayorTitle } from "./progression";
 import { requestReward } from "./requests";
 import type { Rng } from "./rng";
 import { policyState } from "./policies";
@@ -215,7 +215,7 @@ export function processPolitics(draft: GameState, a: CityAnalysis, rng: Rng): Po
     pol.campaign = { offers, promise: null, seen: offers.length === 0 };
     if (offers.length > 0) {
       out.campaignStart = true;
-      news(draft, { turn: draft.turn, emoji: "🗳️", title: `町長選挙まであと約1年`, body: `選挙は${formatDate(pol.nextElection)}。公約を1つ選ぼう。達成すると得票が増えます。`, tone: "neutral" }, out.events);
+      news(draft, { turn: draft.turn, emoji: "🗳️", title: `${mayorTitle(draft.rank)}選挙まであと約1年`, body: `選挙は${formatDate(pol.nextElection)}。公約を1つ選ぼう。達成すると得票が増えます。`, tone: "neutral" }, out.events);
     }
   }
   // 6か月前：世論調査
@@ -248,7 +248,7 @@ export function processPolitics(draft: GameState, a: CityAnalysis, rng: Rng): Po
         {
           turn: draft.turn,
           emoji: "🎉",
-          title: uncontested ? "町長選挙：無投票で当選" : `町長選挙：当選（得票率 ${vote}%）`,
+          title: uncontested ? `${mayorTitle(draft.rank)}選挙：無投票で当選` : `${mayorTitle(draft.rank)}選挙：当選（得票率 ${vote}%）`,
           body: `${pol.term}期目に入りました。${kept ? `公約を達成し、交付金 ¥${reward.toLocaleString("ja-JP")}。` : ""}${landslide ? "圧勝したので、条例の枠が1つ増えました（次の選挙まで）。" : ""}`,
           tone: "good",
         },
@@ -264,8 +264,8 @@ export function processPolitics(draft: GameState, a: CityAnalysis, rng: Rng): Po
         {
           turn: draft.turn,
           emoji: "😞",
-          title: `町長選挙：落選（得票率 ${vote}%）`,
-          body: "新しい町長の方針で、条例はすべて取り消されました。1年間は条例の枠が1つ減り、制定費が2倍になります。4年後の返り咲きを目指そう。",
+          title: `${mayorTitle(draft.rank)}選挙：落選（得票率 ${vote}%）`,
+          body: `新しい${mayorTitle(draft.rank)}の方針で、条例はすべて取り消されました。1年間は条例の枠が1つ減り、制定費が2倍になります。4年後の返り咲きを目指そう。`,
           tone: "bad",
         },
         out.events,

@@ -13,7 +13,7 @@ import { getPolicy, policyState } from "./policies";
 import { policyFor } from "./advice";
 import { promiseLabel, promiseProgress } from "./politics";
 import { isUnlockedTile, neighbors4 } from "./map";
-import { getRank, isBuildingUnlocked, rankIndex } from "./progression";
+import { getRank, isBuildingUnlocked, mayorTitle, rankIndex } from "./progression";
 import type { Rng } from "./rng";
 import type { BuildingType, GameState, MonthReport, Tone, Voice } from "./types";
 
@@ -46,7 +46,7 @@ const PERSONAS = {
 
 /** 困りごとが解決したときのお礼（id は困りごとの声の id） */
 const THANKS: Record<string, { persona: keyof typeof PERSONAS; text: string }> = {
-  unemployment: { persona: "jobSeeker", text: "やっと仕事が見つかった！町長、ありがとう！" },
+  unemployment: { persona: "jobSeeker", text: "やっと仕事が見つかった！ありがとう！" },
   laborShortage: { persona: "shop", text: "働き手が増えて、お店が回るようになったよ！" },
   noise: { persona: "resident", text: "静かになって、ぐっすり眠れるようになった！" },
   pollution: { persona: "resident", text: "空気がきれいになった気がする！" },
@@ -371,7 +371,7 @@ export function voiceCandidates(state: GameState, a: CityAnalysis, report: Month
     if (pol.approval < 40 && left <= 12) {
       out.push({ id: "approvalLow", openTab: "policy", severity: 40 + (40 - pol.approval), tone: "bad", persona: "resident", text: `最近の町政、ちょっと不安だなあ。このままだと次の選挙は厳しいかも（支持率${Math.round(pol.approval)}%）`, hint: "政策タブで支持率の内訳を見よう。満足度・税・失業・赤字が大きく効く" });
     } else if (pol.approval >= 72) {
-      out.push({ id: "approvalHigh", severity: 16, tone: "good", persona: "elder", text: "町長さん、よくやってくれてるねえ。" });
+      out.push({ id: "approvalHigh", severity: 16, tone: "good", persona: "elder", text: `${mayorTitle(state.rank)}さん、よくやってくれてるねえ。` });
     }
     const promise = pol.campaign?.promise;
     if (promise && left <= 3 && left > 0 && promiseProgress(promise, state, a) < 1) {
