@@ -73,8 +73,10 @@ export function computeBudget(state: GameState, ctx: BudgetContext): BudgetBreak
     services: round100(services),
     admin: round100(adminCost(emp.population)),
     interest: round100(state.loan * ECONOMY.loanInterest),
+    // 雪の月は除雪費がかかる
+    snow: round100(roads * Math.max(0, ctx.fx.roadUpkeep)),
     total: 0,
   };
-  expense.total = expense.roads + expense.services + expense.admin + expense.interest;
+  expense.total = expense.roads + expense.services + expense.admin + expense.interest + expense.snow;
   return { income, expense, net: income.total - expense.total };
 }

@@ -18,7 +18,7 @@ describe("ランダムイベント", () => {
 
   it("同じシードなら同じ展開になる（再現性）", () => {
     let a = createNewGame("A", 42);
-    let b = createNewGame("B", 42);
+    let b = createNewGame("A", 42);
     for (let m = 0; m < 24; m++) {
       a = advanceMonth({ ...a, pendingEvent: null })!.state;
       b = advanceMonth({ ...b, pendingEvent: null })!.state;

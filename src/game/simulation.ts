@@ -23,6 +23,7 @@ import { getRank, nextRank, rankForPopulation, rankIndex } from "./progression";
 import { createRng } from "./rng";
 import type { GameState, MonthReport, NewsItem, OutflowReason } from "./types";
 import { generateVoices } from "./voices";
+import { weatherOf } from "./weather";
 
 export interface MonthOutcome {
   state: GameState;
@@ -150,6 +151,7 @@ export function advanceMonth(state: GameState, options: { forceEvent?: string } 
     eraChange,
     scenarioResult,
     outflowReasons,
+    weather: weatherOf(state),
   };
 
   draft.turn += 1;

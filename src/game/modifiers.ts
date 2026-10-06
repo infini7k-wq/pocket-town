@@ -20,6 +20,7 @@ export const NO_EFFECTS: Effects = {
   healthWeight: 0,
   envWeight: 0,
   parkWeight: 0,
+  roadUpkeep: 0,
 };
 
 export function sumEffects(modifiers: Modifier[]): Effects {

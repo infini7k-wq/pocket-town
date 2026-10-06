@@ -9,6 +9,7 @@ import { addModifier } from "./modifiers";
 import { getRank, rankIndex } from "./progression";
 import type { Rng } from "./rng";
 import type { ActionResult, GameState, ModifierEffects, NewsItem, Tone } from "./types";
+import { isFineDays, weatherOf, type WeatherId } from "./weather";
 
 export interface EventContext {
   state: GameState;
@@ -41,6 +42,10 @@ export interface EventDef {
   eras?: string[];
   /** 同じイベントが再び起きるまでの月数（指定がなければ標準値） */
   cooldown?: number;
+  /** 天気ごとの起きやすさの倍率（書いていない天気は1倍。0 なら起きない） */
+  weather?: Partial<Record<WeatherId, number>>;
+  /** その天気の月は、ふだんの抽選の前にこの確率で必ず起きる */
+  weatherTrigger?: { id: WeatherId; chance: (s: GameState) => number };
 }
 
 const yen = (v: number) => `¥${Math.round(v).toLocaleString("ja-JP")}`;
@@ -163,7 +168,8 @@ export const EVENT_DEFS: EventDef[] = [
     emoji: "📸",
     tone: "good",
     message: ({ state }) => (state.profile.trait === "coastal" ? "海の景色がSNSで話題に！観光客が押し寄せています。" : "街並みが話題になり、観光客が増えています。"),
-    weight: ({ state, a }) => (a.population > 150 ? (state.profile.trait === "coastal" ? 2.2 : 0.8) : 0),
+    weight: ({ state, a }) => (a.population > 150 ? (state.profile.trait === "coastal" ? 2.2 : 0.8) * (isFineDays(state) ? 1.5 : 1) : 0),
+    weather: { typhoon: 0, longRain: 0.5, heavySnow: 0.5 },
     apply: ({ state, a }) => {
       const bonus = Math.round((100_000 + a.population * 60) / 1000) * 1000;
       state.money += bonus;
@@ -253,6 +259,7 @@ export const EVENT_DEFS: EventDef[] = [
     tone: "bad",
     message: ({ state, tile }) => `${buildingName(state, tile)}で火災が発生しました。`,
     weight: ({ a }) => 0.15 + a.fireRisk * 1.6,
+    weather: { snow: 1.3, heavySnow: 1.3, rain: 0.6, longRain: 0.5 },
     pickTile: (ctx) =>
       pickBuilding(
         ctx,
@@ -318,6 +325,7 @@ export const EVENT_DEFS: EventDef[] = [
     tone: "bad",
     message: () => "送電設備のトラブルで、街全体が一時停電しました。",
     weight: () => 0.4,
+    weather: { heat: 3, typhoon: 3, heavySnow: 3 },
     apply: ({ state }) => {
       modify(state, "powerOutage", "停電の影響", "🔌", 1, { indDemand: -0.3, happiness: -3 });
       return "工場の注文 -30%・満足度 -3（1か月）";
@@ -349,7 +357,10 @@ export const EVENT_DEFS: EventDef[] = [
     emoji: "🌀",
     tone: "bad",
     message: () => "大型の台風が街を直撃しました。",
-    weight: ({ state }) => ([7, 8, 9, 10].includes(monthOf(state.turn)) ? (state.profile.trait === "coastal" ? 2.5 : 0.8) : 0),
+    // 台風の月だけ起きる（天気の予報を見て備えられる）
+    weight: ({ state }) => (weatherOf(state) === "typhoon" ? (state.profile.trait === "coastal" ? 2.5 : 0.8) : 0),
+    weatherTrigger: { id: "typhoon", chance: (s) => (s.profile.trait === "coastal" ? 0.6 : 0.35) },
+    cooldown: 10,
     apply: ({ state }) => {
       const roads = countBuildings(state, "road") + countBuildings(state, "avenue");
       const cost = Math.round((100_000 + roads * 3_000) / 1000) * 1000;
@@ -522,6 +533,8 @@ export const EVENT_DEFS: EventDef[] = [
     tone: "neutral",
     message: () => "町内会から「今年は盛大に夏祭りをやりたい」と相談がありました。",
     weight: ({ state, a }) => ([7, 8].includes(monthOf(state.turn)) && a.population > 100 ? 3 : 0),
+    weather: { typhoon: 0, longRain: 0.3 },
+    cooldown: 10,
     choices: [
       {
         id: "support",
@@ -778,6 +791,7 @@ export const EVENT_DEFS: EventDef[] = [
     cooldown: 36,
     message: ({ state }) => (state.profile.trait === "coastal" ? "高潮で海沿いの地区が浸水しました。" : "大雨で川があふれ、川沿いの地区が浸水しました。"),
     weight: ({ state }) => (state.turn >= 12 && [6, 7, 8, 9].includes(monthOf(state.turn)) ? (state.profile.trait === "coastal" ? 1 : 0.7) : 0),
+    weather: { longRain: 2, typhoon: 2, sunny: 0, cloudy: 0, heat: 0 },
     pickTile: (ctx) =>
       pickBuilding(ctx, (i) => {
         const b = ctx.state.tiles[i].building!;
@@ -930,6 +944,206 @@ export const EVENT_DEFS: EventDef[] = [
       return `${n}つの工場が閉鎖され、空き工場になりました。建て替えて別の使い道を考えましょう。`;
     },
   },
+  // ---------------- 季節のイベント ----------------
+  {
+    id: "hanami",
+    title: "お花見の季節",
+    emoji: "🌸",
+    tone: "neutral",
+    cooldown: 10,
+    message: () => "桜が満開になりました。町内会から「お花見を盛り上げたい」と相談がありました。",
+    weight: ({ state, a }) => ([3, 4].includes(monthOf(state.turn)) && a.population > 100 && countBuildings(state, "park") + countBuildings(state, "bigPark") + countBuildings(state, "forestPark") >= 1 ? 2.5 : 0),
+    weather: { rain: 0.3, longRain: 0.3 },
+    choices: [
+      {
+        id: "support",
+        label: "屋台と提灯を補助する",
+        detail: "満足度 +5・お店の客 +8%（2か月）",
+        cost: (s) => scaledCost(s, 100_000),
+        apply: ({ state }) => {
+          state.money -= scaledCost(state, 100_000);
+          modify(state, "hanami", "お花見のにぎわい", "🌸", 2, { happiness: 5, comDemand: 0.08 });
+          return "公園が花見客でいっぱいになりました！";
+        },
+      },
+      {
+        id: "skip",
+        label: "見守る",
+        detail: "満足度 +1（1か月）",
+        apply: ({ state }) => {
+          modify(state, "hanami", "お花見", "🌸", 1, { happiness: 1 });
+          return "思い思いにお花見を楽しんでいます。";
+        },
+      },
+    ],
+  },
+  {
+    id: "fireworks",
+    title: "花火大会の相談",
+    emoji: "🎆",
+    tone: "neutral",
+    cooldown: 10,
+    message: () => "観光協会から「水辺で花火大会を開きたい」と相談がありました。",
+    weight: ({ state, a }) => (monthOf(state.turn) === 8 && a.population > 300 && state.tiles.some((t) => t.terrain === "water") ? 2 : 0),
+    weather: { typhoon: 0 },
+    choices: [
+      {
+        id: "hold",
+        label: "開催する",
+        detail: "お店の客 +15%・満足度 +4・観光収入（1か月）／車が増える",
+        cost: (s) => scaledCost(s, 200_000),
+        apply: ({ state }) => {
+          state.money -= scaledCost(state, 200_000);
+          const income = Math.round((population(state) * 20) / 1000) * 1000;
+          state.money += income;
+          modify(state, "fireworks", "花火大会", "🎆", 1, { comDemand: 0.15, happiness: 4, traffic: 0.1 });
+          return `夜空に大輪の花火！ 観光収入 ${yen(income)}`;
+        },
+      },
+      { id: "skip", label: "今年は見送る", detail: "変化なし", apply: () => "今年の花火大会は見送りになりました。" },
+    ],
+  },
+  {
+    id: "autumnLeaves",
+    title: "紅葉が見ごろ",
+    emoji: "🍁",
+    tone: "good",
+    cooldown: 10,
+    message: () => "森の紅葉が見ごろを迎え、紅葉狩りの観光客が訪れています。",
+    weight: ({ state }) => ([10, 11].includes(monthOf(state.turn)) && state.tiles.filter((t) => t.terrain === "forest" && !t.building).length >= 8 ? 1.5 : 0),
+    weather: { sunny: 2, rain: 0.5 },
+    apply: ({ state }) => {
+      const forest = state.tiles.filter((t) => t.terrain === "forest" && !t.building).length;
+      const income = Math.round((50_000 + forest * 3_000 + population(state) * 20) / 1000) * 1000;
+      state.money += income;
+      modify(state, "autumnLeaves", "紅葉狩りの客", "🍁", 2, { comDemand: 0.1 });
+      return `観光収入 ${yen(income)}・お店の客 +10%（2か月）。森を残しておくと観光客が増えます。`;
+    },
+  },
+  {
+    id: "snowRemoval",
+    title: "大雪で道路が真っ白",
+    emoji: "☃️",
+    tone: "bad",
+    cooldown: 3,
+    message: () => "記録的な大雪で、道路が雪に埋もれています。",
+    weight: ({ state }) => (weatherOf(state) === "heavySnow" ? 1 : 0),
+    weatherTrigger: { id: "heavySnow", chance: () => 0.7 },
+    choices: [
+      {
+        id: "plow",
+        label: "除雪車を出す",
+        detail: "大雪の渋滞をほぼ解消・満足度 +1（1か月）",
+        cost: (s) => Math.round((40_000 + (countBuildings(s, "road") + countBuildings(s, "avenue")) * 1_000) / 10_000) * 10_000,
+        apply: ({ state }) => {
+          state.money -= Math.round((40_000 + (countBuildings(state, "road") + countBuildings(state, "avenue")) * 1_000) / 10_000) * 10_000;
+          modify(state, "snowRemoval", "除雪済み", "🚜", 1, { traffic: -0.15, happiness: 1 });
+          return "除雪車が出動し、道路が通れるようになりました。";
+        },
+      },
+      {
+        id: "wait",
+        label: "様子を見る",
+        detail: "路面が凍って渋滞が増える・満足度 -2（2か月）",
+        apply: ({ state }) => {
+          modify(state, "snowIce", "路面の凍結", "🧊", 2, { traffic: 0.1, happiness: -2 });
+          return "道路が凍り、あちこちで渋滞しています。";
+        },
+      },
+    ],
+  },
+  {
+    id: "snowFestival",
+    title: "雪まつりの相談",
+    emoji: "⛄",
+    tone: "neutral",
+    cooldown: 12,
+    message: () => "「この雪を生かして雪まつりを開こう」という声が上がっています。",
+    weight: ({ state, a }) => {
+      const w = weatherOf(state);
+      const place = countBuildings(state, "plaza") + countBuildings(state, "bigPark") + countBuildings(state, "forestPark") > 0;
+      return [1, 2].includes(monthOf(state.turn)) && (w === "snow" || w === "heavySnow") && a.population >= 500 && place ? 2 : 0;
+    },
+    choices: [
+      {
+        id: "hold",
+        label: "開催する",
+        detail: "お店の客 +15%・満足度 +4・引っ越してくる人が増える（2か月）",
+        cost: (s) => scaledCost(s, 150_000),
+        apply: ({ state }) => {
+          state.money -= scaledCost(state, 150_000);
+          modify(state, "snowFestival", "雪まつり", "⛄", 2, { comDemand: 0.15, happiness: 4, resAppeal: 0.02, traffic: 0.05 });
+          return "大きな雪像が並び、街は観光客でにぎわいました！";
+        },
+      },
+      { id: "skip", label: "見送る", detail: "変化なし", apply: () => "今年の雪まつりは見送りになりました。" },
+    ],
+  },
+  {
+    id: "newYear",
+    title: "年末年始の準備",
+    emoji: "🎍",
+    tone: "neutral",
+    cooldown: 10,
+    message: () => "年の瀬です。商店街から「カウントダウンのイベントを開きたい」と相談がありました。",
+    weight: ({ state, a }) => (monthOf(state.turn) === 12 && a.population > 200 ? 2 : 0),
+    choices: [
+      {
+        id: "hold",
+        label: "カウントダウンを開く",
+        detail: "満足度 +3・お店の客 +10%（2か月）",
+        cost: (s) => scaledCost(s, 80_000),
+        apply: ({ state }) => {
+          state.money -= scaledCost(state, 80_000);
+          modify(state, "newYear", "新年のにぎわい", "🎍", 2, { happiness: 3, comDemand: 0.1 });
+          return "みんなで新しい年を迎えました。あけましておめでとう！";
+        },
+      },
+      {
+        id: "skip",
+        label: "静かに迎える",
+        detail: "お店の客 +5%（1か月）",
+        apply: ({ state }) => {
+          modify(state, "newYear", "初売り", "🎍", 1, { comDemand: 0.05 });
+          return "静かな年越しでした。初売りはそれなりににぎわっています。";
+        },
+      },
+    ],
+  },
+  {
+    id: "heatShelter",
+    title: "猛暑で熱中症が心配",
+    emoji: "🥵",
+    tone: "bad",
+    cooldown: 10,
+    message: () => "連日の猛暑で、熱中症で運ばれる人が増えています。",
+    weight: ({ state, a }) => (weatherOf(state) === "heat" && a.population > 200 ? 1 : 0),
+    weatherTrigger: { id: "heat", chance: () => 0.5 },
+    choices: [
+      {
+        id: "shelter",
+        label: "クールシェルターを開く",
+        detail: "満足度 +2・病院の効果 +20%（1か月）",
+        cost: (s) => scaledCost(s, 60_000),
+        apply: ({ state }) => {
+          state.money -= scaledCost(state, 60_000);
+          modify(state, "heatShelter", "クールシェルター", "🧊", 1, { happiness: 2, healthWeight: 0.2 });
+          return "公共施設を涼める場所として開放しました。";
+        },
+      },
+      {
+        id: "skip",
+        label: "見送る",
+        detail: "満足度 -2（お年寄りが多い町は -3）",
+        apply: ({ state }) => {
+          const d = state.profile.tendency === "elderly" ? -3 : -2;
+          modify(state, "heatSkip", "猛暑の疲れ", "🥵", 1, { happiness: d });
+          return "暑さで疲れている人が多いようです。";
+        },
+      },
+    ],
+  },
+
 ];
 
 export function getEventDef(id: string): EventDef | undefined {
@@ -942,12 +1156,23 @@ function pushNews(s: GameState, item: NewsItem) {
 
 /** 今月のイベントを抽選して反映する（draft を直接更新する）。起きたイベントのニュースを返す */
 export function rollEvent(draft: GameState, a: CityAnalysis, rng: Rng, force?: string): NewsItem | null {
+  const log = draft.eventLog ?? {};
+  const ready = (e: EventDef) => log[e.id] === undefined || draft.turn - log[e.id] >= (e.cooldown ?? EVENTS.cooldown);
+  const weather = weatherOf(draft);
+  // 天気で必ず起きるイベント（台風・大雪の除雪など）。ふだんの抽選より先に判定する
+  if (!force && draft.turn >= EVENTS.graceTurns) {
+    for (const e of EVENT_DEFS) {
+      if (e.weatherTrigger?.id === weather && ready(e) && rng.chance(e.weatherTrigger.chance(draft))) {
+        force = e.id;
+        break;
+      }
+    }
+  }
   if (!force && (draft.turn < EVENTS.graceTurns || !rng.chance(EVENTS.monthlyChance))) return null;
   const ctx: EventContext = { state: draft, a, rng };
-  const log = draft.eventLog ?? {};
   const pool = EVENT_DEFS.filter((e) => (force ? e.id === force : true))
-    .filter((e) => force || log[e.id] === undefined || draft.turn - log[e.id] >= (e.cooldown ?? EVENTS.cooldown))
-    .map((def) => ({ def, w: def.weight(ctx) * (def.eras?.includes(draft.era?.id) ? 3 : 1) }))
+    .filter((e) => force || ready(e))
+    .map((def) => ({ def, w: def.weight(ctx) * (def.eras?.includes(draft.era?.id) ? 3 : 1) * (force ? 1 : (def.weather?.[weather] ?? 1)) }))
     .filter((x) => x.w > 0);
   if (pool.length === 0) return null;
 

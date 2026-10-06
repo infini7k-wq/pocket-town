@@ -138,6 +138,9 @@ export function describeEffects(fx: ModifierEffects): string[] {
   if (fx.healthWeight) out.push(`病院の効果 ${pct(fx.healthWeight)}`);
   if (fx.envWeight) out.push(`空気のきれいさの影響 ${pct(fx.envWeight)}`);
   if (fx.parkWeight) out.push(`公園の効果 ${pct(fx.parkWeight)}`);
+  if (fx.traffic) out.push(`交通量 ${pct(fx.traffic)}`);
+  if (fx.happiness) out.push(`満足度 ${fx.happiness > 0 ? "+" : ""}${fx.happiness}`);
+  if (fx.roadUpkeep) out.push(`除雪費（道路の維持費 ${pct(fx.roadUpkeep)}）`);
   return out;
 }
 

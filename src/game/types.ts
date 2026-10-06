@@ -107,6 +107,8 @@ export interface ModifierEffects {
   healthWeight?: number;
   envWeight?: number;
   parkWeight?: number;
+  /** 道路の維持費の割り増し（雪の除雪費など。0.2 = +20%） */
+  roadUpkeep?: number;
 }
 
 /** イベントなどで一定期間かかる効果 */
@@ -168,7 +170,7 @@ export interface HistoryPoint {
 
 export interface BudgetBreakdown {
   income: { residential: number; commercial: number; industrial: number; facilities: number; total: number };
-  expense: { roads: number; services: number; admin: number; interest: number; total: number };
+  expense: { roads: number; services: number; admin: number; interest: number; snow?: number; total: number };
   net: number;
 }
 
@@ -188,6 +190,8 @@ export interface MonthReport {
   outflow: number;
   /** 転出の理由ごとの人数（古いセーブにはない） */
   outflowReasons?: Partial<Record<OutflowReason, number>>;
+  /** その月の天気（WeatherId） */
+  weather?: string;
   populationBefore: number;
   populationAfter: number;
   budget: BudgetBreakdown;
