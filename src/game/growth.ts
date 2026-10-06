@@ -6,6 +6,7 @@ import { GROWTH, LEVEL5_PROJECT_RANGE, MAX_LEVEL, SHOP_CATCHMENT } from "./confi
 import { forEachInRadius, forEachInRange } from "./map";
 import { effectiveCapacity } from "./population";
 import { getRank } from "./progression";
+import { policyLevelCap } from "./policies";
 import type { Rng } from "./rng";
 import { adjacentTraffic } from "./traffic";
 import type { GameState, TileChange } from "./types";
@@ -54,7 +55,9 @@ export function nextLevelChecks(state: GameState, i: number, a: CityAnalysis): G
 
   const checks: GrowthCheck[] = [{ key: "connected", label: "役所まで道路でつながっている", ok: a.net.connected[i] }];
   const upper = b.level + 1;
-  if (upper > getRank(state.rank).maxLevel) {
+  if (upper > policyLevelCap(state)) {
+    checks.push({ key: "rank", label: `景観保全条例で${policyLevelCap(state)}段目までに制限中`, ok: false });
+  } else if (upper > getRank(state.rank).maxLevel) {
     const need = upper === 3 ? "町（人口1,000人）" : upper === 4 ? "市（人口3,000人）" : upper === 5 ? "メガシティ（人口15,000人）" : "次のランク";
     checks.push({ key: "rank", label: `街のランクが${need}以上`, ok: false });
   }
@@ -146,7 +149,7 @@ export function applyGrowth(draft: GameState, a: CityAnalysis, rng: Rng): Growth
   const changes: TileChange[] = [];
   let movedIn = 0;
   let movedOut = 0;
-  const maxLevel = getRank(draft.rank).maxLevel;
+  const maxLevel = Math.min(getRank(draft.rank).maxLevel, policyLevelCap(draft));
 
   draft.tiles.forEach((t, i) => {
     const b = t.building;
@@ -181,7 +184,7 @@ export function applyGrowth(draft: GameState, a: CityAnalysis, rng: Rng): Growth
     if (b.growth >= threshold && b.level < MAX_LEVEL) {
       const checks = nextLevelChecks(draft, i, a);
       if (b.level < maxLevel && checks?.every((c) => c.ok)) {
-        if (rng.chance(GROWTH.levelUpChance)) {
+        if (rng.chance(Math.max(0.1, Math.min(0.9, GROWTH.levelUpChance + a.fx.levelUpChance)))) {
           b.level += 1;
           b.growth = 0;
           changes.push({ tile: i, kind: "levelUp", level: b.level });
@@ -220,7 +223,7 @@ export function applyGrowth(draft: GameState, a: CityAnalysis, rng: Rng): Growth
 /** もうすぐ次のレベルに育つか（地図の ✨ 表示用）：条件をすべて満たし、成長ポイントが6割以上 */
 export function readyToGrow(state: GameState, i: number, a: CityAnalysis): boolean {
   const b = state.tiles[i].building;
-  if (!b || !isZone(b.type) || b.abandoned || b.level === 0 || b.level >= getRank(state.rank).maxLevel) return false;
+  if (!b || !isZone(b.type) || b.abandoned || b.level === 0 || b.level >= Math.min(getRank(state.rank).maxLevel, policyLevelCap(state))) return false;
   if (b.growth < GROWTH.threshold[b.level] * 0.6 || growthScore(state, i, a) <= 0) return false;
   return nextLevelChecks(state, i, a)?.every((c) => c.ok) ?? false;
 }

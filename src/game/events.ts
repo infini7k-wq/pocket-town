@@ -1155,6 +1155,9 @@ function pushNews(s: GameState, item: NewsItem) {
 }
 
 /** 今月のイベントを抽選して反映する（draft を直接更新する）。起きたイベントのニュースを返す */
+/** 防災の条例で起きにくくなる災害 */
+const DISASTERS = ["fire", "earthquake", "flood", "typhoon"];
+
 export function rollEvent(draft: GameState, a: CityAnalysis, rng: Rng, force?: string): NewsItem | null {
   const log = draft.eventLog ?? {};
   const ready = (e: EventDef) => log[e.id] === undefined || draft.turn - log[e.id] >= (e.cooldown ?? EVENTS.cooldown);
@@ -1172,7 +1175,7 @@ export function rollEvent(draft: GameState, a: CityAnalysis, rng: Rng, force?: s
   const ctx: EventContext = { state: draft, a, rng };
   const pool = EVENT_DEFS.filter((e) => (force ? e.id === force : true))
     .filter((e) => force || ready(e))
-    .map((def) => ({ def, w: def.weight(ctx) * (def.eras?.includes(draft.era?.id) ? 3 : 1) * (force ? 1 : (def.weather?.[weather] ?? 1)) }))
+    .map((def) => ({ def, w: def.weight(ctx) * (def.eras?.includes(draft.era?.id) ? 3 : 1) * (force ? 1 : (def.weather?.[weather] ?? 1)) * (DISASTERS.includes(def.id) && !force ? 1 - a.fx.disasterShield : 1) }))
     .filter((x) => x.w > 0);
   if (pool.length === 0) return null;
 

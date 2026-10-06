@@ -17,6 +17,8 @@ export * from "./events";
 export * from "./voices";
 export * from "./advice";
 export * from "./weather";
+export * from "./policies";
+export * from "./politics";
 export * from "./goals";
 export * from "./eras";
 export * from "./requests";

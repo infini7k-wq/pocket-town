@@ -9,6 +9,9 @@ import { getEra } from "./eras";
 import { formatYen } from "./format";
 import { nextLevelChecks } from "./growth";
 import { noiseSources } from "./environment";
+import { getPolicy, policyState } from "./policies";
+import { policyFor } from "./advice";
+import { promiseLabel, promiseProgress } from "./politics";
 import { isUnlockedTile, neighbors4 } from "./map";
 import { getRank, isBuildingUnlocked, rankIndex } from "./progression";
 import type { Rng } from "./rng";
@@ -23,7 +26,9 @@ interface Candidate {
   hint?: string;
   tile?: number;
   tool?: BuildingType;
-  openTab?: "finance";
+  openTab?: "finance" | "policy";
+  /** 解決に役立つ条例 */
+  policy?: string;
 }
 
 const PERSONAS = {
@@ -59,6 +64,13 @@ const THANKS: Record<string, { persona: keyof typeof PERSONAS; text: string }> =
   fire: { persona: "elder", text: "消防署ができて、ひと安心だよ。" },
   taxHigh: { persona: "worker", text: "税金が下がって助かる！" },
 };
+
+/** 月と文字列から決まる 0〜1 の値（声のばらつき用。メインの乱数は使わない） */
+function rng0(turn: number, key: string): number {
+  let h = turn * 2654435761;
+  for (let k = 0; k < key.length; k++) h = Math.imul(h ^ key.charCodeAt(k), 0x01000193);
+  return ((h >>> 0) % 1000) / 1000;
+}
 
 /** 条件を満たす住宅のうち、住民がもっとも多いマス */
 function worstResidential(state: GameState, pred: (i: number) => boolean): { tile?: number; share: number } {
@@ -303,7 +315,7 @@ export function voiceCandidates(state: GameState, a: CityAnalysis, report: Month
     const next5 = (state.tiles[blocked.tile]?.building?.level ?? 0) >= 4;
     const roadTool: BuildingType = isBuildingUnlocked("avenue", state.rank) ? "avenue" : "road";
     const projectHint = "新幹線駅・大学・空港などの大型プロジェクトから6マス以内なら5段目に育つ（メガシティからは2つずつ建てられる）";
-    const map: Record<string, { text: string; hint: string; tool?: BuildingType; openTab?: "finance"; persona: keyof typeof PERSONAS }> = {
+    const map: Record<string, { text: string; hint: string; tool?: BuildingType; openTab?: "finance" | "policy"; persona: keyof typeof PERSONAS }> = {
       "residential:school": { persona: "parent", text: `マンションに建て替えたいのに、学校が遠くて…（${n}棟が待っているよ）`, hint: rank >= 2 ? "学校（範囲4マス）や大学（範囲8マス）の近くの住宅がマンションに育つ" : "学校（範囲4マス）の近くの住宅がマンションに育つ", tool: "school" },
       "residential:transit": { persona: "worker", text: `${next5 ? "超高層レジデンス" : "タワーマンション"}を建てたいのに、近くにバス停がないんだって（${n}棟）`, hint: "バス停（範囲3マス）やバスターミナル（範囲5マス）の近くの住宅が大きく育つ", tool: busTool },
       "commercial:catchment": { persona: "shop", text: `大きなお店にしたいけど、周りに住む人が少なくて…（${n}棟）`, hint: "お店の周り4マスに住宅を増やそう。⛲広場の近くなら必要な人数が半分になる", tool: isBuildingUnlocked("plaza", state.rank) ? "plaza" : "residential" },
@@ -350,6 +362,25 @@ export function voiceCandidates(state: GameState, a: CityAnalysis, report: Month
     const what = type === "residential" ? "空き家" : type === "commercial" ? "空き店舗" : "空き工場";
     const comeBack = type === "residential" ? "まわりの住みやすさを上げると人が戻る" : type === "commercial" ? "お客さん（住宅）と働き手が足りれば、お店が戻る" : "工場の注文と働き手が足りれば、工場が戻る";
     out.push({ id: "abandoned", severity: 30, tone: "bad", persona: "elder", text: `${what}が増えてきて、さみしいねえ。`, hint: `${comeBack}。建て替えや撤去もできる`, tile: abandoned });
+  }
+
+  // ---------- 町政（支持率・公約） ----------
+  const pol = state.politics;
+  if (pol) {
+    const left = pol.nextElection - state.turn;
+    if (pol.approval < 40 && left <= 12) {
+      out.push({ id: "approvalLow", openTab: "policy", severity: 40 + (40 - pol.approval), tone: "bad", persona: "resident", text: `最近の町政、ちょっと不安だなあ。このままだと次の選挙は厳しいかも（支持率${Math.round(pol.approval)}%）`, hint: "政策タブで支持率の内訳を見よう。満足度・税・失業・赤字が大きく効く" });
+    } else if (pol.approval >= 72) {
+      out.push({ id: "approvalHigh", severity: 16, tone: "good", persona: "elder", text: "町長さん、よくやってくれてるねえ。" });
+    }
+    const promise = pol.campaign?.promise;
+    if (promise && left <= 3 && left > 0 && promiseProgress(promise, state, a) < 1) {
+      out.push({ id: "promiseLate", openTab: "policy", severity: 45, tone: "bad", persona: "worker", text: `公約の「${promiseLabel(promise)}」、選挙まであと${left}か月だけど間に合うのかな？`, hint: "公約を達成すると得票が大きく増える。政策タブで進み具合を確かめよう" });
+    }
+  }
+  for (const { id } of policyState(state).active) {
+    const def = getPolicy(id);
+    if (def && def.approval >= 2 && rng0(state.turn, id) < 0.15) out.push({ id: `thanksPolicy:${id}`, severity: 18, tone: "good", persona: def.id === "childcare" ? "parent" : def.id === "health" ? "elder" : "resident", text: `${def.emoji} ${def.name}の条例、助かってるよ！` });
   }
 
   // ---------- 時代の流れ（予告は節目の月だけ） ----------
@@ -458,5 +489,6 @@ export function generateVoices(state: GameState, a: CityAnalysis, rng: Rng, repo
     tile: c.tile,
     tool: c.tool,
     openTab: c.openTab,
+    policy: c.openTab === "policy" ? undefined : policyFor(state, c.id),
   }));
 }

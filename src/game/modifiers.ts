@@ -21,6 +21,10 @@ export const NO_EFFECTS: Effects = {
   envWeight: 0,
   parkWeight: 0,
   roadUpkeep: 0,
+  approval: 0,
+  disasterShield: 0,
+  serviceUpkeep: 0,
+  levelUpChance: 0,
 };
 
 export function sumEffects(modifiers: Modifier[]): Effects {
@@ -31,6 +35,7 @@ export function sumEffects(modifiers: Modifier[]): Effects {
     }
   }
   out.noiseShield = Math.min(1, out.noiseShield);
+  out.disasterShield = Math.max(0, Math.min(1, out.disasterShield));
   return out;
 }
 

@@ -9,6 +9,7 @@ import { computeEmployment, type Employment } from "./employment";
 import { cityEnvironment, computeEnvironment, computeNoise } from "./environment";
 import { eraModifiers } from "./eras";
 import { weatherModifiers } from "./weather";
+import { policyModifiers } from "./policies";
 import { sumEffects, type Effects } from "./modifiers";
 import { cityHappiness, computeHappiness, type HappinessContext } from "./population";
 import { computeRoadNetwork, type RoadNetwork } from "./roads";
@@ -107,7 +108,7 @@ export function projectModifiers(state: GameState, net: RoadNetwork): Modifier[]
 
 export function analyzeCity(state: GameState): CityAnalysis {
   const net = computeRoadNetwork(state);
-  const fx = sumEffects([...state.modifiers, ...eraModifiers(state), ...projectModifiers(state, net), ...weatherModifiers(state)]);
+  const fx = sumEffects([...state.modifiers, ...eraModifiers(state), ...projectModifiers(state, net), ...weatherModifiers(state), ...policyModifiers(state)]);
   const coverage = computeCoverage(state, net);
   const employment = computeEmployment(state, net, fx);
   const traffic = computeTraffic(state, employment, coverage, fx);

@@ -10,6 +10,8 @@ import {
   countBuildings,
   cityScore,
   townStory,
+  getPolicy,
+  weatherModifiers,
   nextAdvice,
   demandLevel,
   DEMAND,
@@ -43,11 +45,13 @@ import {
 import { useState } from "react";
 import { mainOutflowReason, useCity, useGame, type PanelTab } from "./GameProvider";
 import { Sparkline } from "./Sparkline";
+import { PolicyPanel, PromiseCard } from "./PolicyPanel";
 import { Button, Card, ProgressBar, Signed, cx } from "./ui";
 
 const TABS: Array<{ id: PanelTab; label: string; icon: string }> = [
   { id: "voices", label: "住民の声", icon: "💬" },
   { id: "city", label: "街の状況", icon: "📊" },
+  { id: "policy", label: "政策", icon: "📜" },
   { id: "finance", label: "財政", icon: "💴" },
   { id: "goals", label: "目標", icon: "🏆" },
 ];
@@ -56,13 +60,16 @@ export function SidePanel() {
   const { state } = useCity();
   const { panelTab, setPanelTab } = useGame();
   const badVoices = state.voices.filter((v) => v.tone === "bad").length;
+  // 公約が未決定、または選挙が近いときは政策タブに点
+  const politicsDot = !!state.politics && ((!!state.politics.campaign && !state.politics.campaign.promise && state.politics.campaign.offers.length > 0) || state.politics.nextElection - state.turn <= 3);
   return (
     <div id="side-panel" className="flex flex-col gap-3">
       <ScenarioCard />
+      <PromiseCard />
       <MissionCard />
       <AdviceCard />
       <RequestsCard />
-      <div id="side-panel-tabs" className="grid grid-cols-4 gap-1 rounded-2xl bg-white/70 p-1 ring-1 ring-slate-900/5" style={{ scrollMarginTop: "calc(var(--header-h, 80px) + 8px)" }} role="tablist">
+      <div id="side-panel-tabs" className="grid grid-cols-5 gap-1 rounded-2xl bg-white/70 p-1 ring-1 ring-slate-900/5" style={{ scrollMarginTop: "calc(var(--header-h, 80px) + 8px)" }} role="tablist">
         {TABS.map((t) => (
           <button
             key={t.id}
@@ -70,12 +77,13 @@ export function SidePanel() {
             role="tab"
             aria-selected={panelTab === t.id}
             onClick={() => setPanelTab(t.id)}
-            className={cx("relative rounded-xl px-1 py-1.5 text-[11px] font-bold transition sm:text-xs", panelTab === t.id ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-800")}
+            className={cx("relative flex min-h-11 flex-col items-center justify-center rounded-xl px-0.5 py-1 text-[10px] font-bold leading-tight transition", panelTab === t.id ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-800")}
           >
-            <span className="mr-0.5" aria-hidden>
+            <span className="text-base leading-none" aria-hidden>
               {t.icon}
             </span>
             {t.label}
+            {t.id === "policy" && politicsDot && <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-amber-500" aria-label="選挙・公約のお知らせ" />}
             {t.id === "voices" && badVoices > 0 && (
               <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] text-white">{badVoices}</span>
             )}
@@ -84,6 +92,7 @@ export function SidePanel() {
       </div>
       {panelTab === "voices" && <VoicesPanel />}
       {panelTab === "city" && <CityPanel />}
+      {panelTab === "policy" && <PolicyPanel />}
       {panelTab === "finance" && <FinancePanel />}
       {panelTab === "goals" && <GoalsPanel />}
     </div>
@@ -250,7 +259,7 @@ const GRADE_COLOR: Record<string, string> = {
 // ---------------- 今月のおすすめ ----------------
 function AdviceCard() {
   const { state, analysis } = useCity();
-  const { pickTool, openPanel, focusTile } = useGame();
+  const { pickTool, openPanel, focusTile, openPolicy } = useGame();
   const advice = nextAdvice(state, analysis);
   // ミッション中はミッションのカードが案内するので出さない
   if (!advice || advice.id === "mission") return null;
@@ -266,8 +275,18 @@ function AdviceCard() {
           <div className="text-[11px] font-bold leading-snug text-slate-500">{advice.detail}</div>
         </div>
       </div>
-      {(advice.tool || advice.openTab || advice.tile !== undefined) && (
+      {(advice.tool || advice.openTab || advice.policy || advice.tile !== undefined) && (
         <div className="mt-1.5 flex flex-wrap justify-end gap-1.5">
+          {advice.policy && (
+            <button type="button" onClick={() => openPolicy(advice.policy)} className="rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-bold text-amber-700 hover:bg-amber-100">
+              📜 {getPolicy(advice.policy)?.name}の条例
+            </button>
+          )}
+          {advice.openTab === "policy" && (
+            <button type="button" onClick={() => openPolicy()} className="rounded-full bg-amber-500 px-2.5 py-1 text-[11px] font-black text-white">
+              📜 政策を開く
+            </button>
+          )}
           {advice.tile !== undefined && (
             <button type="button" onClick={() => focusTile(advice.tile!)} className="rounded-full bg-blue-50 px-2.5 py-1 text-[11px] font-bold text-blue-700 hover:bg-blue-100">
               📍 場所を見る
@@ -292,14 +311,15 @@ function AdviceCard() {
 /** スマホ：地図の上に出す1行のおすすめ（タップで対応する建物・画面へ） */
 export function AdviceStrip() {
   const { state, analysis } = useCity();
-  const { pickTool, openPanel, focusTile } = useGame();
+  const { pickTool, openPanel, focusTile, openPolicy } = useGame();
   const advice = nextAdvice(state, analysis);
   if (!advice || advice.id === "steady") return null;
   const act = () => {
     if (advice.tool) pickTool(advice.tool);
     else if (advice.openTab === "finance") {
       openPanel("finance");
-    } else if (advice.tile !== undefined) focusTile(advice.tile);
+    } else if (advice.openTab === "policy" || advice.policy) openPolicy(advice.policy);
+    else if (advice.tile !== undefined) focusTile(advice.tile);
   };
   return (
     <button
@@ -314,8 +334,8 @@ export function AdviceStrip() {
         <span className={cx("block text-[10px] font-black", advice.urgent ? "text-rose-700" : "text-emerald-700")}>{advice.urgent ? "🚨 いますぐ" : advice.id === "mission" ? "🎯 ミッション" : "🧭 今月のおすすめ"}</span>
         <span className="block truncate text-xs font-black text-slate-800">{advice.title}</span>
       </span>
-      {(advice.tool || advice.openTab) && (
-        <span className="shrink-0 rounded-full bg-orange-500 px-2.5 py-1 text-[11px] font-black text-white">{advice.tool ? `${BUILDINGS[advice.tool].emoji[1]} 選ぶ` : "💴 開く"}</span>
+      {(advice.tool || advice.openTab || advice.policy) && (
+        <span className="shrink-0 rounded-full bg-orange-500 px-2.5 py-1 text-[11px] font-black text-white">{advice.tool ? `${BUILDINGS[advice.tool].emoji[1]} 選ぶ` : advice.openTab === "finance" ? "💴 開く" : "📜 開く"}</span>
       )}
     </button>
   );
@@ -409,7 +429,7 @@ function RequestsCard() {
 // ---------------- 住民の声 ----------------
 function VoicesPanel() {
   const { state, analysis } = useCity();
-  const { focusTile, pickTool, openPanel } = useGame();
+  const { focusTile, pickTool, openPanel, openPolicy } = useGame();
   return (
     <>
       <Card title="住民の声" icon="💬" action={<span className="text-[11px] font-bold text-slate-400">{formatDate(state.turn)}</span>}>
@@ -430,7 +450,7 @@ function VoicesPanel() {
                   「{v.text}」
                 </div>
                 {v.hint && <div className="mt-1 text-[11px] font-bold text-slate-500">💡 {v.hint}</div>}
-                {(v.tile !== undefined || v.tool || v.openTab) && (
+                {(v.tile !== undefined || v.tool || v.openTab || v.policy) && (
                   <div className="mt-1 flex flex-wrap items-center gap-1.5">
                     {v.tile !== undefined && (
                       <button type="button" onClick={() => focusTile(v.tile!)} className="rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-bold text-blue-700 hover:bg-blue-100">
@@ -445,6 +465,16 @@ function VoicesPanel() {
                     {v.openTab === "finance" && (
                       <button type="button" onClick={() => openPanel("finance")} className="rounded-full bg-violet-50 px-2 py-0.5 text-[11px] font-bold text-violet-700 hover:bg-violet-100">
                         💴 財政を見る
+                      </button>
+                    )}
+                    {v.openTab === "policy" && (
+                      <button type="button" onClick={() => openPolicy()} className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-bold text-amber-700 hover:bg-amber-100">
+                        📜 政策を見る
+                      </button>
+                    )}
+                    {v.policy && (
+                      <button type="button" onClick={() => openPolicy(v.policy)} className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-bold text-amber-700 hover:bg-amber-100">
+                        📜 {getPolicy(v.policy)?.name}の条例
                       </button>
                     )}
                   </div>
@@ -682,9 +712,17 @@ function CityPanel() {
         </div>
       </Card>
 
-      {state.modifiers.length > 0 && (
+      {(state.modifiers.length > 0 || weatherModifiers(state).length > 0) && (
         <Card title="いま効いている効果" icon="⏳">
           <ul className="space-y-1">
+            {weatherModifiers(state).map((m) => (
+              <li key={m.id} className="flex justify-between gap-2 text-xs font-bold">
+                <span className="text-slate-700">
+                  {m.emoji} {m.label}
+                </span>
+                <span className="text-right text-slate-400">{describeEffects(m.effects).join("・")}（今月）</span>
+              </li>
+            ))}
             {state.modifiers.map((m) => (
               <li key={m.id} className="flex justify-between text-xs font-bold">
                 <span className="text-slate-700">
@@ -809,6 +847,8 @@ function FinancePanel() {
           <MoneyRow label="🏛️ 町の施設の維持費" value={-b.expense.services} />
           <MoneyRow label="🗂️ 行政サービス費" value={-b.expense.admin} />
           {b.expense.interest > 0 && <MoneyRow label="💳 利息" value={-b.expense.interest} />}
+          {(b.expense.snow ?? 0) > 0 && <MoneyRow label="☃️ 除雪費" value={-(b.expense.snow ?? 0)} />}
+          {(b.expense.policies ?? 0) > 0 && <MoneyRow label="📜 条例の費用" value={-(b.expense.policies ?? 0)} />}
           <div className="flex justify-between border-t border-slate-100 pt-1 text-sm">
             <span className="text-slate-800">月の収支</span>
             <Signed value={b.net}>{formatYen(b.net, { sign: true })}</Signed>

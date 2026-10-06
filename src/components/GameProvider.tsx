@@ -33,6 +33,8 @@ import {
   resolveEvent,
   saveGame,
   setActiveSlot,
+  shouldOfferPromise,
+  weatherLabel,
   setTax,
   type ActionResult,
   type BuildingType,
@@ -49,7 +51,12 @@ import {
 
 export type Tool = BuildingType | "inspect" | "bulldoze" | "reclaim";
 export type Overlay = "none" | "traffic" | "env" | "happiness" | "park" | "education" | "health" | "fire" | "transit" | "shopping" | "plaza";
-export type PanelTab = "voices" | "city" | "finance" | "goals";
+export type PanelTab = "voices" | "city" | "policy" | "finance" | "goals";
+
+/** 今表示するダイアログ（1つだけ。ここで決めるので、表示されないダイアログが進行を止めることはない） */
+export type DialogId = "gameOver" | "scenario" | "election" | "rankUp" | "era" | "event" | "promise" | null;
+
+export type ElectionResult = NonNullable<MonthReport["election"]>;
 
 /** 施設の効果範囲を表す表示モード */
 export const RANGE_OVERLAYS: Overlay[] = ["park", "education", "health", "fire", "transit", "shopping", "plaza"];
@@ -131,6 +138,13 @@ interface GameContextValue {
   closeEraShift: () => void;
   helpOpen: boolean;
   setHelpOpen: (v: boolean) => void;
+  /** 今表示するダイアログ */
+  dialog: DialogId;
+  electionResult: ElectionResult | null;
+  closeElection: () => void;
+  /** 政策タブを開き、条例のカードを光らせる */
+  openPolicy: (id?: string) => void;
+  policyFocus: { id: string; key: number } | null;
 }
 
 const GameContext = createContext<GameContextValue | null>(null);
@@ -164,6 +178,8 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   const [eraShift, setEraShift] = useState<string | null>(null);
   const [scenarioResult, setScenarioResult] = useState<ScenarioResult | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [electionResult, setElectionResult] = useState<ElectionResult | null>(null);
+  const [policyFocus, setPolicyFocus] = useState<{ id: string; key: number } | null>(null);
   const [slot, setSlot] = useState(1);
   // 取り消し用：今月の操作の前の状態（月を進めるとリセット）
   const [undoStack, setUndoStack] = useState<GameState[]>([]);
@@ -251,6 +267,16 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     },
     [setTool],
   );
+
+  const openPolicy = useCallback((id?: string) => {
+    setPanelTab("policy");
+    if (id) {
+      const key = Date.now();
+      setPolicyFocus({ id, key });
+      window.setTimeout(() => setPolicyFocus((f) => (f?.key === key ? null : f)), 2500);
+    }
+    scrollToOnMobile(id ? `policy-${id}` : "side-panel-tabs");
+  }, []);
 
   const openPanel = useCallback((t: PanelTab) => {
     setPanelTab(t);
@@ -343,6 +369,8 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     setRankUp(null);
     setEraShift(null);
     setScenarioResult(null);
+    setElectionResult(null);
+    setPolicyFocus(null);
     setBanner(null);
     setSelected(null);
     setFlash(null);
@@ -397,6 +425,8 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       ];
       const reason = mainOutflowReason(report);
       if (reason) lines.push(reason);
+      const nextWeather = weatherLabel(after);
+      lines.push(`${nextWeather.emoji} 来月の天気：${nextWeather.name}`);
       const ups = report.changes.filter((c) => c.kind === "levelUp").length;
       const built = report.changes.filter((c) => c.kind === "built").length;
       if (built + ups > 0) lines.push(`🏗️ ${built > 0 ? `完成 ${built}件` : ""}${built > 0 && ups > 0 ? "・" : ""}${ups > 0 ? `成長 ${ups}件` : ""}`);
@@ -417,6 +447,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       if (report.rankUp) setRankUp(report.rankUp);
       if (report.eraChange) setEraShift(report.eraChange);
       if (report.scenarioResult) setScenarioResult(report.scenarioResult);
+      if (report.election) setElectionResult(report.election);
       // メガシティ到達とチャレンジの結果は殿堂に記録する
       if (report.rankUp === "megacity" || (report.scenarioResult && report.scenarioResult !== "failed")) {
         recordHall(makeHallRecord(after, analyzeCity(after)));
@@ -468,7 +499,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         done++;
         // 大事なできごとがあれば、そこで止めて見せる
         const r = out.report;
-        if (cur.pendingEvent || cur.gameOver || r.rankUp || r.eraChange || r.scenarioResult || r.events.some((e) => e.tone === "bad")) break;
+        if (cur.pendingEvent || cur.gameOver || r.rankUp || r.eraChange || r.scenarioResult || r.election || r.campaignStart || r.events.some((e) => e.tone === "bad")) break;
         // ミッションの報酬は毎月受け取る
         const claimed = claimMissions(cur, analyzeCity(cur));
         cur = claimed.state;
@@ -569,6 +600,24 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     clearDialogs();
   }, [commit, slot]);
 
+  // 表示するダイアログを1つだけ決める（優先順）
+  const validChoiceEvent = !!state?.pendingEvent && !!getEventDef(state.pendingEvent.eventId)?.choices;
+  const dialog: DialogId = state?.gameOver
+    ? "gameOver"
+    : scenarioResult && state?.scenario
+      ? "scenario"
+      : electionResult
+        ? "election"
+        : rankUp
+          ? "rankUp"
+          : eraShift
+            ? "era"
+            : validChoiceEvent
+              ? "event"
+              : state && shouldOfferPromise(state)
+                ? "promise"
+                : null;
+
   const value = useMemo<GameContextValue>(
     () => ({
       state,
@@ -613,9 +662,14 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       eraShift,
       closeEraShift: () => setEraShift(null),
       helpOpen,
+      dialog,
+      electionResult,
+      closeElection: () => setElectionResult(null),
+      openPolicy,
+      policyFocus,
       setHelpOpen,
     }),
-    [state, analysis, tool, setTool, pickTool, selected, flash, focusTile, overlay, panelTab, openPanel, showOverlay, applyToolAt, endStroke, runAction, advance, advanceMany, undo, undoStack.length, changeTax, takeLoan, repayLoan, chooseEventOption, newGame, slot, recordToHall, scenarioResult, continueGame, quitToTitle, floaters, toasts, toast, banner, rankUp, eraShift, helpOpen],
+    [state, analysis, tool, setTool, pickTool, selected, flash, focusTile, overlay, panelTab, openPanel, showOverlay, applyToolAt, endStroke, runAction, advance, advanceMany, undo, undoStack.length, changeTax, takeLoan, repayLoan, chooseEventOption, newGame, slot, recordToHall, scenarioResult, continueGame, quitToTitle, floaters, toasts, toast, banner, rankUp, eraShift, helpOpen, dialog, electionResult, openPolicy, policyFocus],
   );
 
   return <GameContext.Provider value={value}>{children}</GameContext.Provider>;

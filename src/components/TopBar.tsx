@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { formatDate, formatNumber, formatYen, getEra, getEventDef, getRank, monthsToNextEra, nextRank, rankProgress, seasonEmoji } from "@/game";
+import { formatNumber, formatYen, getEra, getEventDef, getRank, monthsToNextEra, nextRank, rankProgress } from "@/game";
 import { useCity, useGame } from "./GameProvider";
 import { ProgressBar, cx } from "./ui";
+import { WeatherChip } from "./Weather";
 
 type Status = "good" | "warn" | "bad" | "neutral";
 
@@ -37,7 +38,7 @@ const level = (v: number, good: number, warn: number): Status => (v >= good ? "g
 
 export function TopBar() {
   const { state, analysis: a } = useCity();
-  const { advance, advanceMany, undo, canUndo, openPanel, showOverlay, setHelpOpen } = useGame();
+  const { advance, advanceMany, undo, canUndo, openPanel, showOverlay, setHelpOpen, openPolicy } = useGame();
   const rank = getRank(state.rank);
   const next = nextRank(state.rank);
   const progress = rankProgress(state);
@@ -90,9 +91,7 @@ export function TopBar() {
           </div>
           {/* 狭い画面：日付とヘルプ（PC幅では右端に表示） */}
           <div className="flex items-center gap-1 lg:hidden">
-            <span className="tabular rounded-lg bg-white/80 px-2 py-1 text-xs font-bold text-slate-600">
-              {seasonEmoji(state.turn)} {formatDate(state.turn)}
-            </span>
+            <WeatherChip />
             <button type="button" onClick={() => setHelpOpen(true)} className="h-7 w-7 rounded-full bg-white/80 text-sm font-black text-slate-600" aria-label="遊び方">
               ?
             </button>
@@ -101,7 +100,7 @@ export function TopBar() {
 
         <div className="flex flex-1 items-center gap-3">
         {/* KPI */}
-        <div className="grid flex-1 grid-cols-4 gap-1.5 md:grid-cols-7">
+        <div className="grid flex-1 grid-cols-4 gap-1.5 md:grid-cols-8">
           <Kpi
             icon="👥"
             label="人口"
@@ -127,14 +126,24 @@ export function TopBar() {
           <Kpi icon="💼" label="雇用率" value={`${Math.round(emp.employmentRate * 100)}%`} status={level(emp.employmentRate * 100, 93, 85)} sub={emp.jobFillRate < 0.9 ? <span className="text-amber-600">人手不足</span> : undefined} onClick={() => openPanel("city")} />
           <Kpi icon="🚗" label="交通混雑" value={`${a.congestion}%`} status={a.congestion < 15 ? "good" : a.congestion < 35 ? "warn" : "bad"} onClick={() => showOverlay("traffic")} />
           <Kpi icon="🌿" label="環境" value={`${a.cityEnvironment}`} status={level(a.cityEnvironment, 65, 45)} onClick={() => showOverlay("env")} />
+          {state.politics ? (
+            <Kpi
+              icon="🗳️"
+              label="支持率"
+              value={`${Math.round(state.politics.approval)}%`}
+              status={level(state.politics.approval, 60, 45)}
+              sub={<span className="text-slate-500">{state.politics.nextElection - state.turn <= 1 ? "選挙は来月！" : `選挙まで${state.politics.nextElection - state.turn}か月`}</span>}
+              onClick={() => openPolicy()}
+            />
+          ) : (
+            <Kpi icon="📜" label="政策" value="条例" onClick={() => openPolicy()} />
+          )}
         </div>
 
         {/* PC：日付と翌月ボタン */}
         <div className="hidden items-center gap-2 lg:flex">
           <div className="text-right">
-            <div className="tabular text-sm font-black text-slate-700">
-              {seasonEmoji(state.turn)} {formatDate(state.turn)}
-            </div>
+            <WeatherChip className="ml-auto bg-transparent px-0 text-sm font-black text-slate-700" />
             <button type="button" onClick={() => setHelpOpen(true)} className="text-[11px] font-bold text-blue-600 hover:underline">
               ？ 遊び方
             </button>

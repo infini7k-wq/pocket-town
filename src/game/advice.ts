@@ -6,6 +6,7 @@ import { BUILDINGS } from "./buildings";
 import { DEMAND } from "./config";
 import { currentMission } from "./goals";
 import { isBuildingUnlocked } from "./progression";
+import { POLICY_DEFS, policySlots, policyState, policyStatus } from "./policies";
 import type { BuildingType, GameState, ZoneType } from "./types";
 import { buildableLots, voiceCandidates } from "./voices";
 
@@ -17,7 +18,9 @@ export interface Advice {
   /** なぜ・どうやって */
   detail: string;
   tool?: BuildingType;
-  openTab?: "finance";
+  openTab?: "finance" | "policy";
+  /** 解決に役立つ条例 */
+  policy?: string;
   tile?: number;
   /** 急ぎかどうか（赤字・破綻など） */
   urgent?: boolean;
@@ -54,6 +57,12 @@ const ZONE_ADVICE: Record<ZoneType, { emoji: string; title: string; detail: stri
   industrial: { emoji: "🏭", title: "工場を建てよう", detail: "工場の注文が増えています。住宅から3マス以上はなして置こう" },
 };
 
+/** 困りごとの声を解決しやすい条例で、いま制定できるもの（枠が空いているときだけ） */
+export function policyFor(state: GameState, voiceId: string): string | undefined {
+  if (policyState(state).active.length >= policySlots(state)) return undefined;
+  return POLICY_DEFS.find((d) => d.fixes?.includes(voiceId) && policyStatus(state, d).status === "available")?.id;
+}
+
 export function nextAdvice(state: GameState, a: CityAnalysis): Advice | null {
   if (state.gameOver) return null;
 
@@ -66,7 +75,7 @@ export function nextAdvice(state: GameState, a: CityAnalysis): Advice | null {
   const fromVoice = (c: NonNullable<typeof bad>): Advice => {
     const t = TITLES[c.id];
     const tool = c.tool && isBuildingUnlocked(c.tool, state.rank) ? c.tool : undefined;
-    return { id: c.id, emoji: t.emoji, title: t.title, detail: c.hint ?? c.text, tool, openTab: c.openTab, tile: c.tile, urgent: t.urgent && c.severity >= 90 };
+    return { id: c.id, emoji: t.emoji, title: t.title, detail: c.hint ?? c.text, tool, openTab: c.openTab, tile: c.tile, urgent: t.urgent && c.severity >= 90, policy: policyFor(state, c.id) };
   };
   if (bad && rank(bad) >= 1000) return fromVoice(bad);
 

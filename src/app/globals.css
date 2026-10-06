@@ -98,11 +98,82 @@ body {
   0%, 100% { background-position: 0 0; }
   50% { background-position: 6px 3px; }
 }
+/* ---------- 季節の色（地図の [data-season] で切り替える。マスは再描画しない） ---------- */
+.season-map {
+  --grass-a: #a8d670;
+  --grass-b: #9fd066;
+  --forest-a: #86bf57;
+  --forest-b: #7fb951;
+  --water-1: #5cc3f2;
+  --water-2: #3aa6e0;
+  --tree-0: "🌳";
+  --tree-1: "🌲";
+  --tree-2: "🌳";
+  --tree-3: "🌲";
+}
+.season-map[data-season="spring"] {
+  --grass-a: #b4dc78; --grass-b: #aad46e; --forest-a: #8cc45e; --forest-b: #84bd56;
+  --water-1: #6ccaf2; --water-2: #45ade3;
+  --tree-0: "🌸"; --tree-1: "🌳"; --tree-2: "🌲"; --tree-3: "🌸";
+}
+.season-map[data-season="autumn"] {
+  --grass-a: #bccd72; --grass-b: #b2c46a; --forest-a: #a9b45a; --forest-b: #a1ac53;
+  --water-1: #58b4dc; --water-2: #3a95c6;
+  --tree-0: "🍁"; --tree-1: "🌳"; --tree-2: "🌲"; --tree-3: "🍂";
+}
+.season-map[data-season="winter"] {
+  --grass-a: #dfe8ee; --grass-b: #d3dfe8; --forest-a: #c7d5dd; --forest-b: #bdccd5;
+  --water-1: #8fc7e3; --water-2: #6aa9cc;
+  --tree-0: "🌲"; --tree-1: "🌲"; --tree-2: "🌲"; --tree-3: "🌲";
+}
+/* 交通・環境などの表示中は、色が見やすいよう標準の色に戻す */
+.season-map[data-overlay="on"] {
+  --grass-a: #a8d670; --grass-b: #9fd066; --forest-a: #86bf57; --forest-b: #7fb951;
+  --water-1: #5cc3f2; --water-2: #3aa6e0;
+}
+.t-grass-a { background: var(--grass-a); }
+.t-grass-b { background: var(--grass-b); }
+.t-forest-a { background: var(--forest-a); }
+.t-forest-b { background: var(--forest-b); }
+.tree-0::before { content: var(--tree-0); }
+.tree-1::before { content: var(--tree-1); }
+.tree-2::before { content: var(--tree-2); }
+.tree-3::before { content: var(--tree-3); }
+.season-map[data-season="winter"] .tree { filter: brightness(1.12) saturate(0.6); }
+.season-map[data-season="winter"] .water-tile { animation-play-state: paused; }
+
+/* 天気の粒（雨・雪・花びら・紅葉） */
+.wx-rain {
+  width: 1px;
+  height: 14px;
+  background: rgba(255, 255, 255, 0.7);
+  animation: wx-rain linear infinite;
+}
+.wx-fall {
+  font-size: 12px;
+  animation: wx-fall linear infinite;
+}
+.wx-fall:empty {
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.9);
+}
+@keyframes wx-rain {
+  from { transform: translate3d(0, -20px, 0); opacity: 0.8; }
+  to { transform: translate3d(-12px, 110vh, 0); opacity: 0.8; }
+}
+@keyframes wx-fall {
+  from { transform: translate3d(0, -20px, 0) rotate(0deg); opacity: 0; }
+  10% { opacity: 1; }
+  to { transform: translate3d(30px, 100vh, 0) rotate(240deg); opacity: 0.9; }
+}
+
 .water-tile {
   background:
     radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.35) 0 8%, transparent 9%),
     radial-gradient(circle at 70% 70%, rgba(255, 255, 255, 0.25) 0 6%, transparent 7%),
-    linear-gradient(135deg, #5cc3f2, #3aa6e0);
+    linear-gradient(135deg, var(--water-1, #5cc3f2), var(--water-2, #3aa6e0));
   background-size: 14px 14px, 18px 18px, 100% 100%;
   animation: wave 4s ease-in-out infinite;
 }
@@ -132,6 +203,9 @@ body {
   .animate-pop-in, .animate-float-up, .animate-smoke, .animate-ring, .animate-flash, .animate-car,
   .water-tile, .animate-banner, .animate-bounce-soft, .animate-confetti, .animate-sheet-in {
     animation: none;
+  }
+  .wx-particles {
+    display: none;
   }
 }
 

@@ -5,6 +5,7 @@ import { BuildMenu, BuildPalette, useTools } from "./BuildMenu";
 import { GameProvider, useGame } from "./GameProvider";
 import { CityMap } from "./map/CityMap";
 import { EraModal, EventModal, GameOverModal, HelpModal, RankUpModal, ScenarioResultModal, Toasts } from "./Modals";
+import { ElectionResultModal, PromiseModal } from "./ElectionModals";
 import { AdviceStrip, SidePanel } from "./SidePanel";
 import { StartScreen } from "./StartScreen";
 import { TileInfo } from "./TileInfo";
@@ -37,7 +38,7 @@ function Screens() {
 }
 
 function useShortcuts() {
-  const { setTool, advance, undo, state, rankUp, helpOpen, setHelpOpen, closeRankUp, eraShift, closeEraShift, scenarioResult, closeScenarioResult } = useGame();
+  const { setTool, advance, undo, helpOpen, setHelpOpen, closeRankUp, closeEraShift, closeScenarioResult, closeElection, dialog } = useGame();
   const tools = useTools();
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -49,14 +50,16 @@ function useShortcuts() {
         return;
       }
       if (e.metaKey || e.ctrlKey || e.altKey) return;
-      if (e.key === "Escape" && (helpOpen || rankUp || eraShift || scenarioResult)) {
+      // 閉じられるダイアログ（お知らせ）は Esc で閉じる。選択が必要なダイアログ（イベント・公約）は閉じない
+      if (e.key === "Escape" && (helpOpen || dialog === "rankUp" || dialog === "era" || dialog === "scenario" || dialog === "election")) {
         setHelpOpen(false);
-        closeRankUp();
-        closeEraShift();
-        closeScenarioResult();
+        if (dialog === "rankUp") closeRankUp();
+        if (dialog === "era") closeEraShift();
+        if (dialog === "scenario") closeScenarioResult();
+        if (dialog === "election") closeElection();
         return;
       }
-      if (rankUp || helpOpen || eraShift || scenarioResult || state?.pendingEvent) return;
+      if (helpOpen || dialog) return;
       if (e.key === "Escape") setTool("inspect");
       else if (e.key === "b" || e.key === "B") setTool("bulldoze");
       else if (e.key === "r" || e.key === "R") {
@@ -74,7 +77,7 @@ function useShortcuts() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [setTool, advance, undo, tools, state?.pendingEvent, rankUp, helpOpen, setHelpOpen, closeRankUp, eraShift, closeEraShift, scenarioResult, closeScenarioResult]);
+  }, [setTool, advance, undo, tools, helpOpen, setHelpOpen, closeRankUp, closeEraShift, closeScenarioResult, closeElection, dialog]);
 }
 
 function GameScreen() {
@@ -123,6 +126,8 @@ function GameScreen() {
       <EraModal />
       <ScenarioResultModal />
       <GameOverModal />
+      <PromiseModal />
+      <ElectionResultModal />
       <HelpModal />
     </div>
   );

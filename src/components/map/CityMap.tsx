@@ -23,10 +23,13 @@ import {
   type BuildingType,
   type CoverageKind,
   type GameState,
+  seasonOf,
+  weatherOf,
 } from "@/game";
 import { RANGE_OVERLAYS, useCity, useGame, type Overlay, type Tool } from "../GameProvider";
 import { cx } from "../ui";
 import { TileView } from "./TileView";
+import { WeatherLayer } from "../Weather";
 
 const VIEW_MODES: Array<{ id: Overlay; label: string; icon: string }> = [
   { id: "none", label: "通常", icon: "🗺️" },
@@ -456,6 +459,8 @@ export function CityMap() {
   }, []);
 
   const covKind = RANGE_OVERLAYS.includes(overlay) ? (overlay as CoverageKind) : null;
+  const season = seasonOf(state.turn);
+  const weather = weatherOf(state);
   const railTiles = useMemo(() => railTilesFor(state), [state]);
 
   // 効果範囲の境界線：範囲のプレビューがあればそれを、なければ表示中の施設の範囲を囲む
@@ -578,12 +583,13 @@ export function CityMap() {
           style={{ padding: FRAME, width: zoomed ? "100%" : size * cols + FRAME * 2 || "100%" }}
         >
           <div
-            className="relative grid"
+            className="season-map relative grid"
+            data-season={season}
+            data-overlay={overlay === "none" ? "off" : "on"}
             style={{
               gridTemplateColumns: `repeat(${cols}, ${size}px)`,
               width: size * cols,
-              background: "#9fd066",
-              // 調べる・1マスの施設ではスクロールでき、道路やゾーンはなぞって連続設置できる
+              background: "var(--grass-b)",
               // 調べる・公共施設ではスワイプで地図を動かせ、道路やゾーンはなぞって連続設置できる
               touchAction: paintTool && !moveMode ? "none" : "pan-x pan-y",
               cursor: tool === "inspect" ? "pointer" : tool === "bulldoze" ? "not-allowed" : "crosshair",
@@ -630,6 +636,11 @@ export function CityMap() {
           </div>
         </div>
 
+        {!zoomed && (
+          <div className="pointer-events-none absolute inset-y-0 left-1/2 -translate-x-1/2" style={{ width: size * cols + FRAME * 2 }}>
+            <WeatherLayer season={season} weather={weather} hidden={overlay !== "none"} />
+          </div>
+        )}
         {paintTool && (
           <button
             type="button"

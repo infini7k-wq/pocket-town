@@ -187,12 +187,11 @@ function TileViewImpl(p: TileViewProps) {
       {p.terrain === "water" ? (
         <div className="water-tile absolute inset-0" />
       ) : (
-        <div className="absolute inset-0" style={{ background: p.terrain === "forest" ? (p.checker ? "#86bf57" : "#7fb951") : p.checker ? "#a8d670" : "#9fd066" }} />
+        <div className={cx("absolute inset-0", p.terrain === "forest" ? (p.checker ? "t-forest-a" : "t-forest-b") : p.checker ? "t-grass-a" : "t-grass-b")} />
       )}
       {p.terrain === "forest" && !p.type && (
-        <span className="absolute inset-0 flex items-center justify-center leading-none" style={{ fontSize: s * 0.5 }} aria-hidden>
-          {p.checker ? "🌲" : "🌳"}
-        </span>
+        // 木の種類は季節で変わる（CSS 変数 --tree-0〜3 の文字を出す）
+        <span className={cx("tree absolute inset-0 flex items-center justify-center leading-none", `tree-${(Math.imul(p.i, 2654435761) >>> 0) % 4}`)} style={{ fontSize: s * 0.5 }} aria-hidden />
       )}
       {p.railStrip && <RailStrip edge={p.railStrip} />}
       {road && <Road mask={p.roadMask} avenue={p.type === "avenue"} traffic={p.traffic} size={s} />}

@@ -109,6 +109,14 @@ export interface ModifierEffects {
   parkWeight?: number;
   /** 道路の維持費の割り増し（雪の除雪費など。0.2 = +20%） */
   roadUpkeep?: number;
+  /** 支持率の目標値への加算 */
+  approval?: number;
+  /** 災害（火事・地震・洪水・台風）の起きにくさ（0〜1） */
+  disasterShield?: number;
+  /** 町の施設の維持費の増減（-0.15 = 15%減） */
+  serviceUpkeep?: number;
+  /** 建物が次のレベルに育つ確率への加算 */
+  levelUpChance?: number;
 }
 
 /** イベントなどで一定期間かかる効果 */
@@ -157,7 +165,9 @@ export interface Voice {
   /** 解決に役立つ建物（ボタンでその建設ツールを選べる） */
   tool?: BuildingType;
   /** 解決に役立つ画面（税率・融資など） */
-  openTab?: "finance";
+  openTab?: "finance" | "policy";
+  /** 解決に役立つ条例 */
+  policy?: string;
 }
 
 export interface HistoryPoint {
@@ -170,7 +180,7 @@ export interface HistoryPoint {
 
 export interface BudgetBreakdown {
   income: { residential: number; commercial: number; industrial: number; facilities: number; total: number };
-  expense: { roads: number; services: number; admin: number; interest: number; snow?: number; total: number };
+  expense: { roads: number; services: number; admin: number; interest: number; snow?: number; policies?: number; total: number };
   net: number;
 }
 
@@ -192,6 +202,10 @@ export interface MonthReport {
   outflowReasons?: Partial<Record<OutflowReason, number>>;
   /** その月の天気（WeatherId） */
   weather?: string;
+  /** 選挙の結果（選挙の月だけ） */
+  election?: { won: boolean; vote: number; kept: boolean | null; landslide: boolean; promise: string | null } | null;
+  /** 公約の候補が出た月 */
+  campaignStart?: boolean;
   populationBefore: number;
   populationAfter: number;
   budget: BudgetBreakdown;
@@ -279,6 +293,39 @@ export interface GameState {
   gameId: string;
   /** チャレンジモードのときの状態（フリープレイは null） */
   scenario: ScenarioState | null;
+  /** 制定中の条例（古いセーブにはない） */
+  policies?: PolicyState;
+  /** 支持率と選挙（古いセーブにはない。null = 選挙なし） */
+  politics?: PoliticsState | null;
+}
+
+export interface PolicyState {
+  active: Array<{ id: string; since: number }>;
+  /** 廃止した条例を再び制定できる turn */
+  cooldowns: Record<string, number>;
+  /** 選挙の圧勝でもらえる追加の枠 */
+  bonusSlot: boolean;
+}
+
+export interface CampaignPromise {
+  kind: string;
+  base: number;
+  target: number;
+  difficulty: 1 | 2 | 3;
+}
+
+export interface PoliticsState {
+  /** 支持率（0〜100） */
+  approval: number;
+  /** 次の選挙の turn */
+  nextElection: number;
+  /** 何期目か */
+  term: number;
+  /** 公約の候補と、選んだ公約（選挙の12か月前から） */
+  campaign: { offers: CampaignPromise[]; promise: CampaignPromise | null; seen: boolean } | null;
+  /** 落選後の「新町長の方針」の残り月数 */
+  opposition: number;
+  lastResult: { turn: number; won: boolean; vote: number; kept: boolean | null } | null;
 }
 
 export type ActionResult = { ok: true; state: GameState; message?: string } | { ok: false; error: string };

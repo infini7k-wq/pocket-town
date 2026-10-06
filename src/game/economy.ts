@@ -1,5 +1,6 @@
 // 財政エンジン：税収・維持費・利息を計算する。
 
+import { totalPolicyUpkeep } from "./policies";
 import { BUILDINGS, isRoad } from "./buildings";
 import { ECONOMY, TRAFFIC } from "./config";
 import type { Employment } from "./employment";
@@ -70,13 +71,15 @@ export function computeBudget(state: GameState, ctx: BudgetContext): BudgetBreak
   income.total = income.residential + income.commercial + income.industrial + income.facilities;
   const expense = {
     roads: round100(roads),
-    services: round100(services),
+    services: round100(services * Math.max(0.5, 1 + ctx.fx.serviceUpkeep)),
     admin: round100(adminCost(emp.population)),
     interest: round100(state.loan * ECONOMY.loanInterest),
     // 雪の月は除雪費がかかる
     snow: round100(roads * Math.max(0, ctx.fx.roadUpkeep)),
+    // 制定中の条例の費用
+    policies: round100(totalPolicyUpkeep(state)),
     total: 0,
   };
-  expense.total = expense.roads + expense.services + expense.admin + expense.interest + expense.snow;
+  expense.total = expense.roads + expense.services + expense.admin + expense.interest + expense.snow + expense.policies;
   return { income, expense, net: income.total - expense.total };
 }

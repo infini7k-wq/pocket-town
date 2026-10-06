@@ -13,12 +13,12 @@ const TONE_HEADER = {
 
 export function EventModal() {
   const { state, analysis } = useCity();
-  const { chooseEventOption, focusTile, rankUp, eraShift, scenarioResult } = useGame();
+  const { chooseEventOption, focusTile, dialog } = useGame();
   const view = describePendingEvent(state, analysis);
   // 地図を見てから決められるよう、ダイアログを一時的にたためる
   const [peek, setPeek] = useState(false);
-  // ほかのダイアログが実際に表示されているときだけ後回しにする（表示されないダイアログの状態で隠れたままにならないように）
-  if (!view || state.gameOver || rankUp || eraShift || (scenarioResult && state.scenario)) return null;
+  // 表示するダイアログは GameProvider の dialog で1つだけ決める
+  if (!view || dialog !== "event") return null;
   if (peek) {
     return (
       <button
@@ -81,8 +81,8 @@ export function EventModal() {
 const CONFETTI = ["🎉", "✨", "🎊", "⭐", "🏠", "🏢", "🌳"];
 
 export function RankUpModal() {
-  const { rankUp, closeRankUp, state } = useGame();
-  if (!rankUp) return null;
+  const { rankUp, closeRankUp, state, dialog } = useGame();
+  if (!rankUp || dialog !== "rankUp") return null;
   const rank = getRank(rankUp);
   const unlocks = unlocksForRank(rankUp, state?.profile.trait);
   return (
@@ -132,8 +132,8 @@ export function RankUpModal() {
 }
 
 export function EraModal() {
-  const { eraShift, closeEraShift, rankUp } = useGame();
-  if (!eraShift || rankUp) return null;
+  const { eraShift, closeEraShift, dialog } = useGame();
+  if (!eraShift || dialog !== "era") return null;
   const era = getEra(eraShift);
   return (
     <Modal label="時代の転換" onClose={closeEraShift}>
@@ -174,9 +174,9 @@ export function EraModal() {
 
 export function ScenarioResultModal() {
   const { state, analysis } = useCity();
-  const { scenarioResult, closeScenarioResult, quitToTitle } = useGame();
+  const { scenarioResult, closeScenarioResult, quitToTitle, dialog } = useGame();
   const def = state.scenario ? getScenario(state.scenario.id) : undefined;
-  if (!scenarioResult || !def) return null;
+  if (!scenarioResult || !def || dialog !== "scenario") return null;
   const failed = scenarioResult === "failed";
   const score = cityScore(state, analysis);
   return (

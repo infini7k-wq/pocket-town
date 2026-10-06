@@ -24,6 +24,7 @@ import { createRng } from "./rng";
 import type { GameState, MonthReport, NewsItem, OutflowReason } from "./types";
 import { generateVoices } from "./voices";
 import { weatherOf } from "./weather";
+import { processPolitics } from "./politics";
 
 export interface MonthOutcome {
   state: GameState;
@@ -112,6 +113,9 @@ export function advanceMonth(state: GameState, options: { forceEvent?: string } 
 
   const final = analyzeCity(draft);
   const scenarioResult = evaluateScenario(draft, final);
+  // 支持率・公約・選挙
+  const politics = draft.gameOver ? null : processPolitics(draft, final, rng);
+  if (politics) events.push(...politics.events);
   const achievements = checkGoals(draft, final);
   for (const id of achievements) {
     const g = getGoal(id);
@@ -152,6 +156,8 @@ export function advanceMonth(state: GameState, options: { forceEvent?: string } 
     scenarioResult,
     outflowReasons,
     weather: weatherOf(state),
+    election: politics?.election ?? null,
+    campaignStart: politics?.campaignStart ?? false,
   };
 
   draft.turn += 1;
