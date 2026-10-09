@@ -228,7 +228,7 @@ export function GameOverModal() {
   const { state, analysis } = useCity();
   const { quitToTitle } = useGame();
   if (!state.gameOver) return null;
-  const peak = Math.max(...state.history.map((h) => h.population), analysis.population);
+  const peak = Math.max(...state.history.map((h) => h.population), analysis.population, state.peakPopulation ?? 0);
   return (
     <Modal label="ゲームオーバー">
       <div className="bg-gradient-to-br from-slate-600 to-slate-800 px-6 pb-6 pt-8 text-center text-white">

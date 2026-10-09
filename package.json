@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "build:pages": "PAGES_BASE_PATH=/pocket-town next build",
+    "build:pages": "PAGES_BASE_PATH=/pocket-town next build && PAGES_BASE_PATH=/pocket-town node scripts/gen-sw.mjs",
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",

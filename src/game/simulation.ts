@@ -12,7 +12,7 @@ import { BUILDINGS } from "./buildings";
 import { advanceEra } from "./eras";
 import { processRequests } from "./requests";
 import { evaluateScenario } from "./scenarios";
-import { ECONOMY, HISTORY_LIMIT, NEWS_LIMIT, RANKS } from "./config";
+import { ECONOMY, HISTORY_LIMIT, HISTORY_MAX, NEWS_LIMIT, RANKS } from "./config";
 import { rollEvent } from "./events";
 import { checkGoals, getGoal } from "./goals";
 import { applyGrowth } from "./growth";
@@ -21,7 +21,7 @@ import { tickModifiers } from "./modifiers";
 import { migrate } from "./population";
 import { getRank, nextRank, rankForPopulation, rankIndex } from "./progression";
 import { createRng } from "./rng";
-import type { GameState, MonthReport, NewsItem, OutflowReason } from "./types";
+import type { GameState, HistoryPoint, MonthReport, NewsItem, OutflowReason } from "./types";
 import { generateVoices } from "./voices";
 import { weatherOf } from "./weather";
 import { processPolitics } from "./politics";
@@ -163,13 +163,29 @@ export function advanceMonth(state: GameState, options: { forceEvent?: string } 
   draft.turn += 1;
   draft.monthSpend = 0;
   draft.lastReport = report;
-  draft.history = [
+  draft.history = compactHistory([
     ...draft.history,
-    { turn: draft.turn, population: populationAfter, money: draft.money, happiness: final.cityHappiness, net: budget.net },
-  ].slice(-HISTORY_LIMIT);
+    {
+      turn: draft.turn,
+      population: populationAfter,
+      money: draft.money,
+      happiness: final.cityHappiness,
+      net: budget.net,
+      approval: draft.politics ? Math.round(draft.politics.approval) : undefined,
+      congestion: final.congestion,
+      unemployment: Math.round(final.employment.unemployment * 1000) / 10,
+    },
+  ]);
+  draft.peakPopulation = Math.max(draft.peakPopulation ?? 0, populationAfter, ...state.history.map((h) => h.population));
   draft.voices = generateVoices(draft, final, rng, report, state.voices);
   draft.rngSeed = rng.seed;
   return { state: draft, report };
+}
+
+/** 直近 HISTORY_LIMIT か月は毎月の記録を残し、それより古いものは年1回（4月）分だけ残す */
+export function compactHistory(h: HistoryPoint[]): HistoryPoint[] {
+  const cut = h.length - HISTORY_LIMIT;
+  return h.filter((p, k) => k >= cut || p.turn % 12 === 0).slice(-HISTORY_MAX);
 }
 
 /** 次のランクまでの進み具合（0〜1） */

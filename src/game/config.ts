@@ -246,5 +246,8 @@ export const RANKS: RankDef[] = [
   { id: "megacity", name: "メガシティ", en: "Megacity", emoji: "🌐", minPopulation: 15000, mapSize: 24, maxLevel: 5, loanLimit: 80_000_000, reward: 20_000_000 },
 ];
 
+/** 毎月の記録を残す期間（月）。それより古い記録は年1回分だけ残す */
 export const HISTORY_LIMIT = 120;
+/** 記録の最大の数（年1回分を含めて） */
+export const HISTORY_MAX = 400;
 export const NEWS_LIMIT = 40;

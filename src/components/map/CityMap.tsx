@@ -64,6 +64,8 @@ const RANGE_RADIUS: Record<string, string> = {
 const FRAME = 6;
 /** スマホでタップしやすいマスの大きさ（これより小さいと自動で拡大） */
 const MIN_TOUCH_TILE = 24;
+/** 拡大したときのマスの大きさの上限 */
+const MAX_TILE = 64;
 
 const TRAFFIC_COLORS = ["", "rgba(34,197,94,0.75)", "rgba(245,158,11,0.8)", "rgba(239,68,68,0.85)"];
 
@@ -147,14 +149,47 @@ export function CityMap() {
   const scale = zoom ?? autoZoom;
   const size = fit > 0 ? Math.max(14, Math.floor(fit * scale)) : 0;
   const zoomed = size * cols > inner + 1;
+  // ピンチ・Ctrl+ホイールで変えられる拡大率の範囲（全体表示〜3倍。マスは最大64px）
+  const maxScale = fit > 0 ? Math.max(1, Math.min(Math.max(3, autoZoom), MAX_TILE / fit)) : 1;
+  /** ピンチなどで拡大率を変えたあと、指（カーソル）の下の場所がずれないようにスクロールを合わせる */
+  const pendingZoom = useRef<{ ox: number; oy: number; ratio: number; x: number; y: number } | null>(null);
 
-  // 拡大したときは、町の中心（役所）が見えるようにスクロールする
+  // 拡大したときは、町の中心（役所）が見えるようにスクロールする（ピンチで拡大したときは指の位置を基準にする）
   useEffect(() => {
     const el = scrollRef.current;
-    if (!el || !zoomed) return;
+    if (!el || !zoomed || pendingZoom.current) return;
     el.scrollLeft = (el.scrollWidth - el.clientWidth) / 2;
     el.scrollTop = (el.scrollHeight - el.clientHeight) / 2;
   }, [zoomed, cols]);
+
+  // 拡大率を確定したら、一時的な CSS の拡大を外し、指の位置が同じ場所に来るようにスクロールする
+  useLayoutEffect(() => {
+    const p = pendingZoom.current;
+    const grid = gridRef.current;
+    const sc = scrollRef.current;
+    if (grid) {
+      grid.style.transform = "";
+      grid.style.transformOrigin = "";
+    }
+    if (!p || !sc) return;
+    pendingZoom.current = null;
+    const r = sc.getBoundingClientRect();
+    sc.scrollLeft = FRAME + p.ox * p.ratio - (p.x - r.left);
+    sc.scrollTop = FRAME + p.oy * p.ratio - (p.y - r.top);
+  }, [size]);
+
+  /** 拡大率を変える（基準の画面位置 x,y と、その位置の地図上の座標 ox,oy） */
+  const applyZoom = (next: number, x: number, y: number, ox: number, oy: number) => {
+    const target = Math.max(1, Math.min(maxScale, next));
+    const nextSize = Math.max(14, Math.floor(fit * target));
+    if (nextSize === size) {
+      const grid = gridRef.current;
+      if (grid) grid.style.transform = "";
+      return;
+    }
+    pendingZoom.current = { ox, oy, ratio: nextSize / size, x, y };
+    setZoom(target);
+  };
 
   // 「場所を見る」：スマホでは、そのマスが画面の見える部分（ヘッダーと下のシートの間）の真ん中に来るようにする
   useEffect(() => {
@@ -319,7 +354,24 @@ export function CityMap() {
   const startPan = (touches: TouchList) => {
     const [a, b] = [touches[0], touches[1]];
     const sc = scrollRef.current;
-    gesture.current = { kind: "pan", x: (a.clientX + b.clientX) / 2, y: (a.clientY + b.clientY) / 2, sl: sc?.scrollLeft ?? 0, st: sc?.scrollTop ?? 0, wy: window.scrollY };
+    const x = (a.clientX + b.clientX) / 2;
+    const y = (a.clientY + b.clientY) / 2;
+    const g = gridRef.current?.getBoundingClientRect();
+    gesture.current = {
+      kind: "pan",
+      x,
+      y,
+      sl: sc?.scrollLeft ?? 0,
+      st: sc?.scrollTop ?? 0,
+      wy: window.scrollY,
+      d0: Math.max(1, Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY)),
+      s0: scale,
+      ox: g ? x - g.left : 0,
+      oy: g ? y - g.top : 0,
+      k: 1,
+      mx: x,
+      my: y,
+    };
   };
   const findTouch = (list: TouchList, id: number): Touch | undefined => {
     for (let k = 0; k < list.length; k++) if (list[k].identifier === id) return list[k];
@@ -330,14 +382,10 @@ export function CityMap() {
       const touches = e.targetTouches;
       const n = touches.length;
       if (n >= 2) {
-        // 2本目の指：いまのストロークを取り消して、地図を動かす（3本目が来たら基準を取り直す）
+        // 2本目の指：いまのストロークを取り消して、地図を動かす・ピンチで拡大縮小（どの道具でも。3本目が来たら基準を取り直す）
         if (gesture.current.kind === "draw") cancelStroke();
-        if (paintTool && !moveMode) {
-          e.preventDefault();
-          startPan(touches);
-        } else {
-          gesture.current = { kind: "none" };
-        }
+        if (e.cancelable) e.preventDefault();
+        startPan(touches);
         return;
       }
       const t = e.changedTouches[0] ?? touches[0];
@@ -363,10 +411,21 @@ export function CityMap() {
       if (g.kind === "pan") {
         const touches = e.targetTouches;
         if (touches.length < 2) return;
-        e.preventDefault();
+        if (e.cancelable) e.preventDefault();
         const [a, b] = [touches[0], touches[1]];
-        const dx = (a.clientX + b.clientX) / 2 - g.x;
-        const dy = (a.clientY + b.clientY) / 2 - g.y;
+        const mx = (a.clientX + b.clientX) / 2;
+        const my = (a.clientY + b.clientY) / 2;
+        // ピンチ：指の間の距離の変化で拡大縮小（指を離すまでは CSS で拡大し、マスは描き直さない）
+        const k = Math.max(1 / g.s0, Math.min(maxScale / g.s0, Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY) / g.d0));
+        const grid = gridRef.current;
+        if (grid && Math.abs(k - 1) > 0.04) {
+          grid.style.transformOrigin = `${g.ox}px ${g.oy}px`;
+          grid.style.transform = `scale(${k})`;
+        }
+        gesture.current = { ...g, k: Math.abs(k - 1) > 0.04 ? k : 1, mx, my };
+        if (Math.abs(k - 1) > 0.04) return; // 拡大縮小している間は動かさない
+        const dx = mx - g.x;
+        const dy = my - g.y;
         const sc = scrollRef.current;
         let restY = dy;
         if (sc && (sc.scrollHeight > sc.clientHeight + 1 || sc.scrollWidth > sc.clientWidth + 1)) {
@@ -396,6 +455,12 @@ export function CityMap() {
     },
     end(e: TouchEvent) {
       const remaining = e.targetTouches.length;
+      const cur = gesture.current;
+      // ピンチの指を離したら、拡大率を確定する
+      if (cur.kind === "pan" && cur.k !== 1 && remaining < 2) {
+        applyZoom(cur.s0 * cur.k, cur.mx, cur.my, cur.ox, cur.oy);
+        gesture.current = { kind: "none" }; // 残った指で続けて動かさない（全部離してからやり直す）
+      }
       if (remaining > 0) {
         // 2本指の片方を離した：残りが2本以上なら基準を取り直し、1本なら全部離すまで何もしない
         if (gesture.current.kind === "pan" && remaining >= 2) startPan(e.targetTouches);
@@ -419,8 +484,16 @@ export function CityMap() {
       }
       strokeTiles.current = [];
     },
+    wheel(e: WheelEvent) {
+      if (!e.ctrlKey) return;
+      e.preventDefault();
+      const g = gridRef.current?.getBoundingClientRect();
+      if (!g) return;
+      applyZoom(scale * Math.exp(-e.deltaY * 0.01), e.clientX, e.clientY, e.clientX - g.left, e.clientY - g.top);
+    },
     cancel() {
       if (gesture.current.kind === "draw") cancelStroke();
+      if (gridRef.current) gridRef.current.style.transform = "";
       gesture.current = { kind: "none" };
       strokeTiles.current = [];
     },
@@ -450,7 +523,17 @@ export function CityMap() {
     el.addEventListener("touchmove", move, { passive: false });
     el.addEventListener("touchend", end, { passive: false });
     el.addEventListener("touchcancel", cancel);
+    // iPhone の Safari：地図の上での2本指の拡大（ページ全体の拡大）を止める
+    const gesture = (e: Event) => e.preventDefault();
+    el.addEventListener("gesturestart", gesture, { passive: false } as AddEventListenerOptions);
+    el.addEventListener("gesturechange", gesture, { passive: false } as AddEventListenerOptions);
+    // PC：Ctrl+ホイール（トラックパッドのピンチ）でカーソルの位置を基準に拡大縮小
+    const wheel = (e: WheelEvent) => touchRef.current.wheel(e);
+    el.addEventListener("wheel", wheel, { passive: false });
     return () => {
+      el.removeEventListener("gesturestart", gesture);
+      el.removeEventListener("gesturechange", gesture);
+      el.removeEventListener("wheel", wheel);
       el.removeEventListener("touchstart", start);
       el.removeEventListener("touchmove", move);
       el.removeEventListener("touchend", end);
@@ -882,4 +965,4 @@ type TouchGesture =
   | { kind: "none" }
   | { kind: "tap"; x: number; y: number; tile: number; wy: number; sy: number }
   | { kind: "draw"; last: number; id: number }
-  | { kind: "pan"; x: number; y: number; sl: number; st: number; wy: number };
+  | { kind: "pan"; x: number; y: number; sl: number; st: number; wy: number; d0: number; s0: number; ox: number; oy: number; k: number; mx: number; my: number };

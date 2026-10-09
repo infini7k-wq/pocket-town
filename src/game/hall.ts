@@ -35,7 +35,7 @@ export function makeHallRecord(s: GameState, a: CityAnalysis, now: Date = new Da
     trait: s.profile.trait,
     rank: s.rank,
     turn: s.turn,
-    peakPopulation: Math.max(a.population, ...s.history.map((h) => h.population)),
+    peakPopulation: Math.max(a.population, s.peakPopulation ?? 0, ...s.history.map((h) => h.population)),
     score: score.total,
     grade: score.grade,
     style: townStyle(s, a),

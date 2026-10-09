@@ -29,6 +29,8 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build:pages
+      # オフライン用の Service Worker が書き出されていることを確かめる
+      - run: test -f out/sw.js
       - uses: actions/upload-pages-artifact@v3
         with:
           path: out

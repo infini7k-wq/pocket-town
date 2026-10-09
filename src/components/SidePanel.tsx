@@ -45,6 +45,7 @@ import {
 import { useState } from "react";
 import { mainOutflowReason, useCity, useGame, type PanelTab } from "./GameProvider";
 import { Sparkline } from "./Sparkline";
+import { StatsChart } from "./StatsChart";
 import { PolicyPanel, PromiseCard } from "./PolicyPanel";
 import { Button, Card, ProgressBar, Signed, cx } from "./ui";
 
@@ -655,16 +656,13 @@ function CityPanel() {
           </span>
         </div>
         <p className="mt-1.5 text-[11px] font-bold text-emerald-800">「{townStory(state.profile.trait, state.profile.tendency)}」</p>
-        {pops.length > 1 && (
-          <div className="mt-3">
-            <div className="mb-1 flex justify-between text-[11px] font-bold text-slate-500">
-              <span>人口の推移</span>
-              <span className="tabular">{formatNumber(a.population)}人</span>
-            </div>
-            <Sparkline values={pops} />
-          </div>
-        )}
       </Card>
+
+      {pops.length > 1 && (
+        <Card title="グラフ" icon="📈">
+          <StatsChart history={state.history} />
+        </Card>
+      )}
 
       <EraCard />
 

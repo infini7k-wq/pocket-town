@@ -170,3 +170,22 @@ describe("ランクに合わせた呼び名", () => {
     expect(s.news[0].title).toContain("市長選挙");
   });
 });
+
+describe("統計の記録", () => {
+  it("直近10年は毎月、それより古い記録は年1回だけ残す。最高人口は別に覚えている", () => {
+    let s = createNewGame("H", 3);
+    s.history = Array.from({ length: 300 }, (_, k) => ({ turn: k, population: k === 5 ? 99_999 : 100 + k, money: 0, happiness: 50, net: 0 }));
+    s.turn = 299; // 次の記録は turn 300（つながるように）
+    s = advanceMonth(s)!.state;
+    const last = s.history.at(-1)!;
+    expect(last.approval === undefined || typeof last.approval === "number").toBe(true);
+    expect(last.congestion).toBeTypeOf("number");
+    // 直近120か月は毎月
+    const recent = s.history.slice(-120);
+    expect(recent.every((p, k) => k === 0 || p.turn === recent[k - 1].turn + 1)).toBe(true);
+    // それより古いものは4月（turn が12の倍数）だけ
+    expect(s.history.slice(0, -120).every((p) => p.turn % 12 === 0)).toBe(true);
+    // 間引きで消えた最高人口も覚えている
+    expect(s.peakPopulation).toBe(99_999);
+  });
+});

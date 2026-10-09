@@ -176,6 +176,12 @@ export interface HistoryPoint {
   money: number;
   happiness: number;
   net: number;
+  /** 支持率（古いセーブにはない） */
+  approval?: number;
+  /** 交通混雑（%） */
+  congestion?: number;
+  /** 失業率（%） */
+  unemployment?: number;
 }
 
 export interface BudgetBreakdown {
@@ -295,6 +301,8 @@ export interface GameState {
   scenario: ScenarioState | null;
   /** 制定中の条例（古いセーブにはない） */
   policies?: PolicyState;
+  /** これまでの最高人口（履歴を間引いても分かるように） */
+  peakPopulation?: number;
   /** 支持率と選挙（古いセーブにはない。null = 選挙なし） */
   politics?: PoliticsState | null;
 }

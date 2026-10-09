@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import { SwRegister } from "@/components/SwRegister";
 
 export const metadata: Metadata = {
   title: "ポケットタウン — 小さな町づくりシミュレーション",
@@ -19,7 +20,10 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="ja">
-      <body className="min-h-dvh font-sans antialiased">{children}</body>
+      <body className="min-h-dvh font-sans antialiased">
+        {children}
+        <SwRegister />
+      </body>
     </html>
   );
 }
