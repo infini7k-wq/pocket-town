@@ -4,6 +4,7 @@ import { BUILDINGS, capacityAt, jobsAt } from "./buildings";
 import { COM_SUPPORT, DISCONNECTED_FACTOR, ECONOMY, HAPPINESS, IND_SUPPORT, WORKFORCE_RATIO } from "./config";
 import { population } from "./map";
 import type { Effects } from "./modifiers";
+import { stationWorking, type RailNetwork } from "./rail";
 import type { RoadNetwork } from "./roads";
 import type { GameState } from "./types";
 
@@ -42,7 +43,7 @@ export function bizTaxFactor(rate: number): number {
   return clamp(1 - d * ECONOMY.bizTaxSensitivity - (d > 0 ? d * d * 0.004 : 0), 0.4, 1.4);
 }
 
-export function computeEmployment(state: GameState, net: RoadNetwork, fx: Effects): Employment {
+export function computeEmployment(state: GameState, net: RoadNetwork, fx: Effects, rail?: RailNetwork): Employment {
   const pop = population(state);
   const n = state.tiles.length;
   const rawJobs = new Array<number>(n).fill(0);
@@ -53,6 +54,7 @@ export function computeEmployment(state: GameState, net: RoadNetwork, fx: Effect
   let plazas = 0;
   let stations = 0;
   let landmarks = 0;
+  let railStations = 0;
 
   state.tiles.forEach((tile, i) => {
     const b = tile.building;
@@ -69,12 +71,14 @@ export function computeEmployment(state: GameState, net: RoadNetwork, fx: Effect
     else if (BUILDINGS[b.type].jobs.length) serviceJobs += jobs;
     if (b.type === "plaza") plazas++;
     if (b.type === "station") stations++;
+    // 電車が走る鉄道駅：駅前に買い物客が集まる
+    if (b.type === "railStation" && b.level > 0 && rail && stationWorking(rail, i)) railStations++;
     if (b.type === "landmark") landmarks++;
   });
 
   const comSupport =
     fx.comSupport +
-    (COM_SUPPORT.base + pop * COM_SUPPORT.perCapita + plazas * COM_SUPPORT.plazaBonus + stations * COM_SUPPORT.stationBonus + landmarks * COM_SUPPORT.landmarkBonus) *
+    (COM_SUPPORT.base + pop * COM_SUPPORT.perCapita + plazas * COM_SUPPORT.plazaBonus + stations * COM_SUPPORT.stationBonus + railStations * COM_SUPPORT.railStationBonus + landmarks * COM_SUPPORT.landmarkBonus) *
       state.profile.comDemand *
       bizTaxFactor(state.taxes.commercial) *
       (1 + fx.comDemand) +

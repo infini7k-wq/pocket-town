@@ -11,7 +11,8 @@ import {
   analyzeCity,
   anchorOf,
   reclaim,
-  isRoad,
+  dragDemolishable,
+  isUpgradeTarget,
   borrow,
   claimMissions,
   clearSave,
@@ -50,7 +51,7 @@ import {
 } from "@/game";
 
 export type Tool = BuildingType | "inspect" | "bulldoze" | "reclaim";
-export type Overlay = "none" | "traffic" | "env" | "happiness" | "park" | "education" | "health" | "fire" | "transit" | "shopping" | "plaza";
+export type Overlay = "none" | "traffic" | "lines" | "env" | "happiness" | "park" | "education" | "health" | "fire" | "transit" | "shopping" | "plaza";
 export type PanelTab = "voices" | "city" | "policy" | "finance" | "goals";
 
 /** 今表示するダイアログ（1つだけ。ここで決めるので、表示されないダイアログが進行を止めることはない） */
@@ -246,7 +247,9 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     const cov = t !== "inspect" && t !== "bulldoze" && t !== "reclaim" ? BUILDINGS[t].coverage?.kind : undefined;
     setOverlay((o) => {
       if (cov && cov !== "landmark") return cov as Overlay;
-      return RANGE_OVERLAYS.includes(o) ? "none" : o;
+      // 線路・鉄道駅を選んだら路線図を表示
+      if (t === "rail" || t === "railStation") return "lines";
+      return RANGE_OVERLAYS.includes(o) || o === "lines" ? "none" : o;
     });
   }, []);
 
@@ -320,7 +323,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       if (tool === "bulldoze") {
         const b = cur.tiles[i]?.building;
         if (!b) return;
-        if (painting && BUILDINGS[b.type].category !== "zone" && !isRoad(b.type)) return; // 公共施設・大型施設はドラッグでは壊さない
+        if (painting && !dragDemolishable(b.type)) return; // 公共施設・大型施設はドラッグでは壊さない
         const before = cur.money;
         const next = apply((s) => demolish(s, i), { silent: painting && strokeError.current, stroke: true });
         if (!next) {
@@ -343,9 +346,9 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         return;
       }
       if (painting && !BUILDINGS[tool].paintable) return;
-      // ドラッグ中は、すでに何か建っているマスを黙ってスキップする（大通りへの道路の置き換えは除く）
-      const existing = cur.tiles[i]?.building?.type;
-      if (painting && existing && !(tool === "avenue" && existing === "road")) return;
+      // ドラッグ中は、すでに何か建っているマスを黙ってスキップする（大通りへの置き換え・踏切は除く）
+      const existing = cur.tiles[i]?.building;
+      if (painting && existing && !isUpgradeTarget(tool, existing)) return;
       const before = cur.money;
       const next = apply((s) => placeBuilding(s, tool, i), { silent: painting && strokeError.current, stroke: true });
       if (!next) {

@@ -12,12 +12,17 @@ import { weatherModifiers } from "./weather";
 import { policyModifiers } from "./policies";
 import { sumEffects, type Effects } from "./modifiers";
 import { cityHappiness, computeHappiness, type HappinessContext } from "./population";
+import { computeBusRoutes, computeRailNetwork, type BusRoutes, type RailNetwork } from "./rail";
 import { computeRoadNetwork, type RoadNetwork } from "./roads";
 import { computeTraffic, type TrafficResult } from "./traffic";
 import type { BudgetBreakdown, GameState, Modifier, ZoneType } from "./types";
 
 export interface CityAnalysis {
   net: RoadNetwork;
+  /** 鉄道の路線と駅の効き目 */
+  rail: RailNetwork;
+  /** バス路線 */
+  busRoutes: BusRoutes;
   coverage: CoverageMap;
   employment: Employment;
   traffic: TrafficResult;
@@ -109,9 +114,11 @@ export function projectModifiers(state: GameState, net: RoadNetwork): Modifier[]
 export function analyzeCity(state: GameState): CityAnalysis {
   const net = computeRoadNetwork(state);
   const fx = sumEffects([...state.modifiers, ...eraModifiers(state), ...projectModifiers(state, net), ...weatherModifiers(state), ...policyModifiers(state)]);
-  const coverage = computeCoverage(state, net);
-  const employment = computeEmployment(state, net, fx);
-  const traffic = computeTraffic(state, employment, coverage, fx);
+  const rail = computeRailNetwork(state);
+  const busRoutes = computeBusRoutes(state, net);
+  const coverage = computeCoverage(state, net, busRoutes);
+  const employment = computeEmployment(state, net, fx, rail);
+  const traffic = computeTraffic(state, employment, coverage, fx, rail);
   const env = computeEnvironment(state, coverage, traffic, fx);
   const noise = computeNoise(state, fx);
   const ctx: HappinessContext = {
@@ -123,6 +130,7 @@ export function analyzeCity(state: GameState): CityAnalysis {
     congestion: traffic.congestion,
     employment,
     fx,
+    ride: rail.ride,
   };
   const happiness = computeHappiness(state, ctx);
   const cityH = cityHappiness(state, happiness);
@@ -135,11 +143,13 @@ export function analyzeCity(state: GameState): CityAnalysis {
     if (!b || isRoad(b.type)) return;
     buildings++;
     if (coverage.fire[i] < 0.1) uncovered++;
-    if (BUILDINGS[b.type].category !== "special" && !net.connected[i]) unconnected++;
+    if (BUILDINGS[b.type].category !== "special" && BUILDINGS[b.type].category !== "rail" && !net.connected[i]) unconnected++;
   });
 
   return {
     net,
+    rail,
+    busRoutes,
     coverage,
     employment,
     traffic,
@@ -152,7 +162,7 @@ export function analyzeCity(state: GameState): CityAnalysis {
     cityEnvironment: cityEnvironment(state, env),
     congestion: traffic.congestion,
     demand: computeDemand(state, employment, cityH, fx),
-    budget: computeBudget(state, { employment, connected: net.connected, trafficLevel: traffic.level, fx }),
+    budget: computeBudget(state, { employment, connected: net.connected, trafficLevel: traffic.level, fx, riders: traffic.riders }),
     fireRisk: buildings ? uncovered / buildings : 0,
     unconnected,
   };
@@ -168,5 +178,6 @@ export function happinessContext(a: CityAnalysis): HappinessContext {
     congestion: a.congestion,
     employment: a.employment,
     fx: a.fx,
+    ride: a.rail.ride,
   };
 }

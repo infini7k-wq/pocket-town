@@ -239,7 +239,7 @@ export const POLICY_DEFS: PolicyDef[] = [
     name: "公共交通無料化",
     emoji: "🚇",
     category: "life",
-    description: "バスと電車を無料にする",
+    description: "バスと電車を無料にする（電車の運賃収入はなくなる）",
     pros: ["交通量 −25%", "満足度 +2", "支持率 +2"],
     cons: ["住民1人あたり ¥35/月"],
     effects: { traffic: -0.25, happiness: 2 },

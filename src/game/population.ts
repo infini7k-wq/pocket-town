@@ -20,6 +20,8 @@ export interface HappinessContext {
   congestion: number;
   employment: Employment;
   fx: Effects;
+  /** 鉄道駅の効き目（マスごと、0〜1） */
+  ride?: Float32Array;
 }
 
 export interface HappinessFactor {
@@ -73,7 +75,7 @@ export function happinessFactors(state: GameState, i: number, ctx: HappinessCont
   add("消防", c.fire[i] * HAPPINESS.fire);
   add("買い物", c.shopping[i] * HAPPINESS.shopping);
   add("広場", c.plaza[i] * HAPPINESS.plaza);
-  add("公共交通", c.transit[i] * HAPPINESS.transit);
+  add("公共交通", Math.max(c.transit[i], ctx.ride?.[i] ?? 0) * HAPPINESS.transit);
   add("シンボル", c.landmark[i] * HAPPINESS.landmark);
   add("環境", (ctx.env[i] - 60) * HAPPINESS.envWeight * w.env);
   if (nearTerrain(state, i, "water", 2) > 0) add("水辺の景色", HAPPINESS.waterView);

@@ -5,6 +5,7 @@ export * from "./config";
 export * from "./buildings";
 export * from "./map";
 export * from "./roads";
+export * from "./rail";
 export * from "./coverage";
 export * from "./employment";
 export * from "./traffic";

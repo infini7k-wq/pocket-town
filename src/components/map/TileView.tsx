@@ -18,7 +18,9 @@ export interface TileViewProps {
   locked: boolean;
   overlay?: string;
   dim: boolean;
-  badge?: "noRoad" | "disconnected";
+  badge?: "noRoad" | "disconnected" | "noLine";
+  /** 線路のつながり（上=1, 右=2, 下=4, 左=8）。0 以外なら線路を描く（道路なら踏切） */
+  railMask?: number;
   selected: boolean;
   flashKey?: number;
   preview?: "ok" | "bad";
@@ -131,6 +133,32 @@ function Sprite({ type, level, abandoned, size }: { type: BuildingType; level: n
   );
 }
 
+/** 線路（なぞって敷いたもの）。crossing = 道路の上の踏切（レールだけを描く） */
+function Track({ mask, crossing }: { mask: number; crossing: boolean }) {
+  const w = 0.34;
+  const inset = (1 - w) / 2;
+  const rails = (deg: number) => `linear-gradient(${deg}deg, transparent 18%, #455a64 18% 30%, transparent 30% 70%, #455a64 70% 82%, transparent 82%)`;
+  const look = (horizontal: boolean): React.CSSProperties =>
+    crossing
+      ? { backgroundImage: rails(horizontal ? 0 : 90) }
+      : { backgroundImage: `${rails(horizontal ? 0 : 90)}, repeating-linear-gradient(${horizontal ? "90deg" : "0deg"}, #8d6e63 0 3px, transparent 3px 7px)`, backgroundColor: "#d7ccc8" };
+  const m = mask || 10; // つながりがなければ横向きの短い線路
+  const arm = (key: string, style: React.CSSProperties, horizontal: boolean) => <div key={key} className="absolute" style={{ ...look(horizontal), ...style }} aria-hidden />;
+  const reach = `${(0.5 + w / 2) * 100}%`;
+  return (
+    <>
+      {m & 1 ? arm("t", { left: `${inset * 100}%`, width: `${w * 100}%`, top: 0, height: reach }, false) : null}
+      {m & 4 ? arm("b", { left: `${inset * 100}%`, width: `${w * 100}%`, bottom: 0, height: reach }, false) : null}
+      {m & 8 ? arm("l", { top: `${inset * 100}%`, height: `${w * 100}%`, left: 0, width: reach }, true) : null}
+      {m & 2 ? arm("r", { top: `${inset * 100}%`, height: `${w * 100}%`, right: 0, width: reach }, true) : null}
+      {crossing && (
+        // 踏切の目印（黄色と黒のしま）
+        <div className="absolute left-[8%] top-[8%] h-[16%] w-[16%] rounded-full ring-1 ring-black/40" style={{ background: "repeating-linear-gradient(45deg, #facc15 0 2px, #111827 2px 4px)" }} aria-hidden />
+      )}
+    </>
+  );
+}
+
 /** 2×2 の大型施設（本体のマスから4マス分にはみ出して描く） */
 /** 線路（地図の端から駅の中心まで） */
 function Rail({ side }: { side: "top" | "right" | "bottom" | "left" }) {
@@ -194,9 +222,11 @@ function TileViewImpl(p: TileViewProps) {
         <span className={cx("tree absolute inset-0 flex items-center justify-center leading-none", `tree-${(Math.imul(p.i, 2654435761) >>> 0) % 4}`)} style={{ fontSize: s * 0.5 }} aria-hidden />
       )}
       {p.railStrip && <RailStrip edge={p.railStrip} />}
+      {p.railMask !== undefined && !road && <Track mask={p.railMask} crossing={false} />}
       {road && <Road mask={p.roadMask} avenue={p.type === "avenue"} traffic={p.traffic} size={s} />}
+      {p.railMask !== undefined && road && <Track mask={p.railMask} crossing />}
       {p.type && p.bigSize === 2 && <BigSprite type={p.type} level={p.level} buildLeft={p.buildLeft} size={s} railSide={p.railSide} />}
-      {p.type && !road && !p.bigSize && p.type !== "annex" && <Sprite type={p.type} level={p.level} abandoned={p.abandoned} size={s} />}
+      {p.type && !road && !p.bigSize && p.type !== "annex" && p.type !== "rail" && <Sprite type={p.type} level={p.level} abandoned={p.abandoned} size={s} />}
       {p.soon && (
         <span className="animate-bounce-soft pointer-events-none absolute left-[2%] top-[-4%] leading-none" style={{ fontSize: s * 0.32 }} title="もうすぐ育ちます" aria-hidden>
           ✨
@@ -233,9 +263,9 @@ function TileViewImpl(p: TileViewProps) {
         <span
           className="absolute right-0 top-0 z-[6] flex items-center justify-center rounded-full bg-white leading-none shadow"
           style={{ width: s * 0.36, height: s * 0.36, fontSize: s * 0.24 }}
-          title={p.badge === "noRoad" ? "道路に面していません" : "役所まで道路がつながっていません"}
+          title={p.badge === "noRoad" ? "道路に面していません" : p.badge === "noLine" ? "電車が走っていません（線路でほかの駅か地図の端につないでください）" : "役所まで道路がつながっていません"}
         >
-          {p.badge === "noRoad" ? "⛔" : "⚠️"}
+          {p.badge === "noRoad" ? "⛔" : p.badge === "noLine" ? "🚫" : "⚠️"}
         </span>
       )}
 

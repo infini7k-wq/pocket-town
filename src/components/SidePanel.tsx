@@ -12,6 +12,10 @@ import {
   townStory,
   getPolicy,
   weatherModifiers,
+  policyState,
+  RAIL,
+  lineStyle,
+  busStyle,
   nextAdvice,
   demandLevel,
   DEMAND,
@@ -638,6 +642,68 @@ function coverageShare(state: GameState, a: CityAnalysis, kind: "park" | "educat
   return a.population > 0 ? covered / a.population : 0;
 }
 
+/** 鉄道・バス路線：路線ごとの駅の数・電車が走るか、バス路線の停留所の数 */
+function TransitCard() {
+  const { state, analysis: a } = useCity();
+  const { showOverlay } = useGame();
+  const lines = a.rail.lines.map((l, id) => ({ l, id })).filter(({ l }) => l.stations.length > 0);
+  // 駅のない線路は、まとめて1行にする
+  const bare = a.rail.lines.filter((l) => l.stations.length === 0);
+  const buses = a.busRoutes.routes.map((r, id) => ({ r, id })).filter(({ r }) => r.length >= 2);
+  const lonely = a.busRoutes.routes.filter((r) => r.length === 1).length;
+  if (lines.length === 0 && buses.length === 0 && rankIndex(state.rank) < rankIndex("city")) return null;
+  const fare = policyState(state).active.some((p) => p.id === "freeTransit") ? 0 : a.traffic.riders * RAIL.fare;
+  return (
+    <Card title="鉄道・バス路線" icon="🚆" action={<button type="button" onClick={() => showOverlay("lines")} className="text-[11px] font-bold text-blue-600">路線図を見る</button>}>
+      <ul className="space-y-1 text-xs font-bold">
+        {lines.map(({ l, id }) => {
+          const st = lineStyle(state, a.rail, id);
+          return (
+            <li key={`r${id}`} className="flex items-center justify-between gap-2">
+              <span className="min-w-0 truncate">
+                <span style={{ color: st.color }}>■</span> {st.name}
+                <span className="ml-1 text-slate-400">駅{l.stations.length}{l.edge ? "・となり町" : ""}{l.shinkansen ? "・新幹線" : ""}</span>
+              </span>
+              <span className={l.working ? "text-emerald-600" : "text-amber-600"}>{l.working ? "運行中" : "未開通"}</span>
+            </li>
+          );
+        })}
+        {bare.length > 0 && (
+          <li className="flex items-center justify-between gap-2">
+            <span>
+              <span className="text-slate-400">■</span> 駅のない線路
+              <span className="ml-1 text-slate-400">{bare.length}か所・{bare.reduce((n, l) => n + l.tiles.length, 0)}マス</span>
+            </span>
+            <span className="text-amber-600">未開通</span>
+          </li>
+        )}
+        {buses.map(({ r, id }) => {
+          const st = busStyle(a.busRoutes, id);
+          return (
+            <li key={`b${id}`} className="flex items-center justify-between gap-2">
+              <span>
+                <span style={{ color: st.color }}>●</span> {st.name}
+                <span className="ml-1 text-slate-400">停留所{r.length}{a.busRoutes.hub[id] ? "・ターミナル/駅に直通" : ""}</span>
+              </span>
+              <span className="text-emerald-600">運行中</span>
+            </li>
+          );
+        })}
+      </ul>
+      {lines.length === 0 && bare.length === 0 && buses.length === 0 && <p className="text-[11px] font-bold text-slate-500">まだ路線はありません。</p>}
+      {a.traffic.riders > 0 && (
+        <p className="mt-1.5 text-[11px] font-bold text-slate-600">
+          🚃 電車の乗客 月{formatNumber(a.traffic.riders)}人{fare > 0 ? `・運賃 ${formatYen(fare, { compact: true })}/月` : "（公共交通無料化中）"}
+        </p>
+      )}
+      {lonely > 0 && <p className="mt-1 text-[11px] font-bold text-slate-500">🚏 路線になっていないバス停が{lonely}つ（道のり8マス以内にほかの停留所を置くと、よく効くようになります）</p>}
+      {rankIndex(state.rank) >= rankIndex("city") && lines.every(({ l }) => !l.working) && (
+        <p className="mt-1 text-[11px] font-bold text-slate-500">💡 線路をなぞって敷き、道路に面した線路の上に鉄道駅を置こう。駅どうしか地図の端（となり町）につながると電車が走り、駅のまわりの車が大きく減ります。</p>
+      )}
+    </Card>
+  );
+}
+
 function CityPanel() {
   const { state, analysis: a } = useCity();
   const emp = a.employment;
@@ -685,6 +751,8 @@ function CityPanel() {
           <StatRow label="住宅の定員 / 空室率" value={`${formatNumber(emp.housingCapacity)} / ${Math.round(emp.vacancyRate * 100)}%`} tone={emp.vacancyRate < 0.05 ? "warn" : "good"} />
         </div>
       </Card>
+
+      <TransitCard />
 
       <Card title="町の施設が届いている住民" icon="🏛️">
         <div className="space-y-2">
@@ -839,9 +907,9 @@ function FinancePanel() {
           <MoneyRow label="🏠 住宅税" value={b.income.residential} />
           <MoneyRow label="🏪 商業税" value={b.income.commercial} />
           <MoneyRow label="🏭 工業税" value={b.income.industrial} />
-          {b.income.facilities > 0 && <MoneyRow label="🏟️ 施設収入" value={b.income.facilities} />}
+          {b.income.facilities > 0 && <MoneyRow label={a.traffic.riders > 0 ? "🏟️ 施設収入（電車の運賃を含む）" : "🏟️ 施設収入"} value={b.income.facilities} />}
           <div className="pt-1 text-[11px] text-slate-400">支出</div>
-          <MoneyRow label="🛣️ 道路の維持費" value={-b.expense.roads} />
+          <MoneyRow label={a.rail.lines.length > 0 ? "🛣️ 道路・線路の維持費" : "🛣️ 道路の維持費"} value={-b.expense.roads} />
           <MoneyRow label="🏛️ 町の施設の維持費" value={-b.expense.services} />
           <MoneyRow label="🗂️ 行政サービス費" value={-b.expense.admin} />
           {b.expense.interest > 0 && <MoneyRow label="💳 利息" value={-b.expense.interest} />}

@@ -53,7 +53,7 @@ export const POPULATION = {
 };
 
 /** 商業が支えられる雇用 = base + 人口 × perCapita（× 需要倍率） */
-export const COM_SUPPORT = { base: 20, perCapita: 0.22, plazaBonus: 60, stationBonus: 80, landmarkBonus: 150 };
+export const COM_SUPPORT = { base: 20, perCapita: 0.22, plazaBonus: 60, stationBonus: 80, railStationBonus: 40, landmarkBonus: 150 };
 /** 工業が支えられる雇用 = base + 人口 × perCapita（× 需要倍率） */
 export const IND_SUPPORT = { base: 60, perCapita: 0.25 };
 

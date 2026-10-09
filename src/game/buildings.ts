@@ -3,7 +3,7 @@
 import { COM_JOBS, IND_JOBS, RES_CAPACITY } from "./config";
 import type { BuildingType, CoverageKind, ModifierEffects, RankId, TraitId, ZoneType } from "./types";
 
-export type BuildingCategory = "road" | "zone" | "service" | "project" | "special";
+export type BuildingCategory = "road" | "rail" | "zone" | "service" | "project" | "special";
 
 export interface CoverageDef {
   kind: CoverageKind;
@@ -263,6 +263,36 @@ export const BUILDINGS: Record<BuildingType, BuildingDef> = {
     removable: true,
     paintable: false,
     color: "#90caf9",
+  },
+  rail: {
+    type: "rail",
+    name: "線路",
+    description: "なぞって敷く。駅どうし・地図の端とつなぐと電車が走る",
+    category: "rail",
+    emoji: ["", "🛤️"],
+    cost: 60_000,
+    upkeep: 2_500,
+    jobs: [0, 0],
+    unlockRank: "city",
+    removable: true,
+    paintable: true,
+    color: "#8d6e63",
+  },
+  railStation: {
+    type: "railStation",
+    name: "鉄道駅",
+    description: "線路の上に、道路に面して置く。線路でほかの駅か地図の端につながると、周りの車が大きく減る",
+    category: "service",
+    emoji: ["", "🚉"],
+    cost: 1_500_000,
+    upkeep: 80_000,
+    jobs: ALL_LEVELS(6),
+    effect: "建物から4マス以内の車を最大6割減らす（路線につながる駅が多いほど効く）。満足度も上がり、タワーマンションなどに育つ条件にもなる",
+    unlockRank: "city",
+    removable: true,
+    paintable: false,
+    color: "#7e57c2",
+    trips: 12,
   },
   station: {
     type: "station",
@@ -546,6 +576,8 @@ export const BUILD_ORDER: BuildingType[] = [
   "plaza",
   "station",
   "landmark",
+  "rail",
+  "railStation",
   ...PROJECTS,
 ];
 
@@ -557,6 +589,17 @@ export function isZone(type: BuildingType): type is ZoneType {
 
 export function isRoad(type: BuildingType | undefined): boolean {
   return type === "road" || type === "avenue";
+}
+
+/** 線路のマス（駅は含まない） */
+export function isRail(type: BuildingType | undefined): boolean {
+  return type === "rail";
+}
+
+/** なぞって撤去できるもの（ゾーン・道路・線路。公共施設や大型施設はドラッグでは壊さない） */
+export function dragDemolishable(type: BuildingType): boolean {
+  const cat = BUILDINGS[type].category;
+  return cat === "zone" || cat === "rail" || isRoad(type);
 }
 
 export function buildingEmoji(type: BuildingType, level: number): string {

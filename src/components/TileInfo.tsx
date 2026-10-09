@@ -29,6 +29,11 @@ import {
   footprint,
   neighbors4,
   tripsFor,
+  RAIL,
+  busStopBoost,
+  busStyle,
+  lineStyle,
+  rankIndex,
   type CityAnalysis,
   type GameState,
   type BuildingType,
@@ -51,6 +56,29 @@ const NEARBY: Array<{ kind: CoverageKind; icon: string; label: string }> = [
 const ZONES: BuildingType[] = ["residential", "commercial", "industrial"];
 const TRAFFIC_COLOR = ["", "text-emerald-600", "text-amber-600", "text-rose-600"];
 const TERRAIN_TEXT = { grass: "草地", forest: "森（建設時に伐採費 ¥10,000）", water: "水辺（建設不可）" };
+
+/** 線路・駅の路線の状態（路線名・電車が走るか・つながっている先） */
+function LineRows({ state, a, i }: { state: GameState; a: CityAnalysis; i: number }) {
+  const id = a.rail.lineOf[i];
+  const line = a.rail.lines[id];
+  if (!line) return null;
+  const st = lineStyle(state, a.rail, id);
+  const links = [line.stations.length > 0 && `駅${line.stations.length}`, line.edge && "となり町", line.shinkansen && "新幹線駅"].filter(Boolean).join("・");
+  return (
+    <>
+      <Row label="路線">
+        <span style={{ color: st.color }}>■</span> {st.name}
+      </Row>
+      <Row label="つながっている先">{links || "なし"}</Row>
+      <Row label="電車">{line.working ? <span className="text-emerald-600">✓ 走っている（効き目 {Math.round(line.strength * 100)}%）</span> : <span className="text-amber-600">✗ まだ走っていない</span>}</Row>
+      {!line.working && (
+        <p className="mt-1 rounded-xl bg-amber-50 p-2 text-[11px] font-bold leading-relaxed text-amber-800">
+          {line.stations.length === 0 ? "🚉 線路の上（道路に面した場所）に鉄道駅を置くと電車が走ります。" : "🛤️ 線路をのばして、ほかの駅か地図の端（となり町）につなぐと電車が走ります。"}
+        </p>
+      )}
+    </>
+  );
+}
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -84,11 +112,11 @@ function trafficSources(state: GameState, a: CityAnalysis, road: number) {
     const b = state.tiles[anchor]?.building;
     if (!b || isRoad(b.type) || seen.has(anchor)) continue;
     seen.add(anchor);
-    const trips = tripsFor(state, anchor, a.employment, a.coverage, a.fx);
+    const trips = tripsFor(state, anchor, a.employment, a.coverage, a.fx, a.rail);
     if (trips <= 0) continue;
     const cells = BUILDINGS[b.type].size === 2 ? footprint(anchor, state.width) : [anchor];
     const roads = new Set(cells.flatMap((c) => neighbors4(c, state.width, state.height)).filter((k) => isRoad(state.tiles[k].building?.type))).size;
-    out.push({ tile: anchor, emoji: buildingEmoji(b.type, b.level), name: levelName(b.type, b.level), trips: trips / Math.max(1, roads), roads, transit: a.coverage.transit[anchor] > 0 });
+    out.push({ tile: anchor, emoji: buildingEmoji(b.type, b.level), name: levelName(b.type, b.level), trips: trips / Math.max(1, roads), roads, transit: a.coverage.transit[anchor] > 0 || a.rail.ride[anchor] > 0 });
   }
   return out.sort((p, q) => q.trips - p.trips).slice(0, 3);
 }
@@ -161,6 +189,7 @@ export function TileInfo({ onClose }: { onClose: () => void }) {
     const cap = roadCapacity(b.type);
     const lv = a.traffic.level[i];
     const sources = trafficSources(state, a, i);
+    const busHere = [...new Set(a.busRoutes.paths.filter((p) => p.tiles.includes(i)).map((p) => p.route))];
     body = (
       <>
         {header(b.type === "avenue" ? BUILDINGS.avenue.emoji[1] : "🛣️", BUILDINGS[b.type].name, `(${x}, ${y})`)}
@@ -172,7 +201,18 @@ export function TileInfo({ onClose }: { onClose: () => void }) {
             {Math.round(a.traffic.load[i])} / {cap}
           </Row>
           <Row label="役所への接続">{a.net.connected[i] ? <span className="text-emerald-600">✓ つながっている</span> : <span className="text-rose-600">✗ つながっていない</span>}</Row>
-          <Row label="維持費">{formatYen(BUILDINGS[b.type].upkeep)}/月</Row>
+          <Row label="維持費">{formatYen(BUILDINGS[b.type].upkeep + (b.rail ? BUILDINGS.rail.upkeep : 0))}/月</Row>
+          {b.rail && <Row label="踏切">🚧 電車待ちで流れが{Math.round((1 - RAIL.crossing) * 100)}%悪い</Row>}
+          {busHere.length > 0 && (
+            <Row label="バス路線">
+              {busHere.map((r) => (
+                <span key={r} className="ml-1" style={{ color: busStyle(a.busRoutes, r).color }}>
+                  {busStyle(a.busRoutes, r).name}
+                </span>
+              ))}
+            </Row>
+          )}
+          {b.rail && <LineRows state={state} a={a} i={i} />}
           {sources.length > 0 && (
             <div className="mt-2">
               <div className="text-[11px] font-bold text-slate-500">この道路に車を出している建物（となりのマス）</div>
@@ -198,9 +238,21 @@ export function TileInfo({ onClose }: { onClose: () => void }) {
                 <li>{state.rank === "village" ? "町になると大通り（道路の約2.5倍）が使える" : "大通りに置き換える（道路の約2.5倍の車が通れる）"}</li>
                 <li>{state.rank === "village" ? "町になるとバス停が使える（範囲内の車が最大5割減）" : "バス停・バスターミナルの範囲に入れると、範囲内の建物の車が4〜5割減る（施設は道路に面して置く）"}</li>
                 <li>交差する道路を増やすと、車がほかの道路に流れる</li>
+                {rankIndex(state.rank) >= rankIndex("city") && <li>線路を敷いて鉄道駅を置くと、駅から4マス以内の車が最大6割減る（駅どうしか地図の端につなぐ）</li>}
               </ul>
             </div>
           )}
+        </div>
+      </>
+    );
+  } else if (b.type === "rail") {
+    body = (
+      <>
+        {header("🛤️", tile.terrain === "water" ? "鉄橋" : "線路", `(${x}, ${y})`)}
+        <p className="mt-2 text-xs font-bold text-slate-600">{BUILDINGS.rail.description}</p>
+        <div className="mt-1">
+          <LineRows state={state} a={a} i={i} />
+          <Row label="維持費">{formatYen(BUILDINGS.rail.upkeep)}/月</Row>
         </div>
       </>
     );
@@ -280,25 +332,41 @@ export function TileInfo({ onClose }: { onClose: () => void }) {
   } else {
     const def = BUILDINGS[b.type];
     let covered = 0;
-    if (def.coverage) {
-      forEachInRange(i, def.size ?? 1, def.coverage.radius, state.width, state.height, (j) => {
+    // バス停は路線になると範囲が広がる。鉄道駅は電車の効き目の範囲
+    const radius = b.type === "busStop" ? busStopBoost(a.busRoutes, state, i).radius : b.type === "railStation" ? RAIL.radius : (def.coverage?.radius ?? 0);
+    if (def.coverage || b.type === "railStation") {
+      forEachInRange(i, def.size ?? 1, radius, state.width, state.height, (j) => {
         const t = state.tiles[j].building;
         if (t?.type === "residential") covered += t.occupants;
       });
     }
+    const route = a.busRoutes.routeOf.get(i);
+    const routeStops = route !== undefined ? a.busRoutes.routes[route].length : 0;
     body = (
       <>
         {header(b.level === 0 && def.category === "project" ? "🏗️" : def.emoji[1], def.name, `(${x}, ${y})${def.size === 2 ? " ・ 2×2" : ""}`)}
         <p className="mt-2 text-xs font-bold text-slate-600">{def.description}</p>
-        {def.effect && def.coverage && (
+        {def.effect && (def.coverage || b.type === "railStation") && (
           <p className="mt-2 rounded-xl bg-sky-50 p-2 text-[11px] font-bold leading-relaxed text-sky-800">
-            📡 効果範囲（地図の紫の枠・{def.size === 2 ? "建物の端から" : "半径"}{def.coverage.radius}マス。道路や川をはさんでも届く）：{def.effect}
+            📡 効果範囲（地図の紫の枠・{def.size === 2 ? "建物の端から" : "半径"}{radius}マス。道路や川をはさんでも届く）：{def.effect}
           </p>
         )}
         <div className="mt-1">
           {roadStatus}
-          {def.coverage && <Row label="効果範囲">{def.coverage.radius}マス</Row>}
-          {def.coverage && <Row label="範囲内の住民">{covered.toLocaleString("ja-JP")}人</Row>}
+          {(def.coverage || b.type === "railStation") && <Row label="効果範囲">{radius}マス</Row>}
+          {(def.coverage || b.type === "railStation") && <Row label="範囲内の住民">{covered.toLocaleString("ja-JP")}人</Row>}
+          {b.type === "railStation" && <LineRows state={state} a={a} i={i} />}
+          {route !== undefined && (routeStops >= 2 || b.type === "busStop") && (
+            <Row label="バス路線">
+              {routeStops >= 2 ? (
+                <span style={{ color: busStyle(a.busRoutes, route).color }}>
+                  {busStyle(a.busRoutes, route).name}（停留所{routeStops}）{a.busRoutes.hub[route] && b.type === "busStop" ? "・ターミナル/駅に直通" : ""}
+                </span>
+              ) : (
+                <span className="text-slate-400">ひとりぼっち（道のり8マス以内にほかの停留所がない）</span>
+              )}
+            </Row>
+          )}
           <Row label="雇用">{jobsAt(b.type, 1)}人</Row>
           <Row label="維持費">{formatYen(def.upkeep)}/月</Row>
         </div>

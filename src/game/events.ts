@@ -265,7 +265,7 @@ export const EVENT_DEFS: EventDef[] = [
         ctx,
         (i) => {
           const b = ctx.state.tiles[i].building!;
-          return !isRoad(b.type) && BUILDINGS[b.type].category !== "special" && b.level > 0 && ctx.a.coverage.fire[i] < 0.75;
+          return !isRoad(b.type) && BUILDINGS[b.type].category !== "special" && BUILDINGS[b.type].category !== "rail" && b.level > 0 && ctx.a.coverage.fire[i] < 0.75;
         },
         (i) => 1 - ctx.a.coverage.fire[i],
       ),
@@ -764,7 +764,7 @@ export const EVENT_DEFS: EventDef[] = [
     apply: ({ state, a, rng }) => {
       const targets = state.tiles
         .map((t, i) => ({ t, i }))
-        .filter(({ t }) => t.building && !isRoad(t.building.type) && BUILDINGS[t.building.type].category !== "special" && t.building.level > 0);
+        .filter(({ t }) => t.building && !isRoad(t.building.type) && BUILDINGS[t.building.type].category !== "special" && BUILDINGS[t.building.type].category !== "rail" && t.building.level > 0);
       const count = Math.min(targets.length, 3 + Math.floor(a.population / 1500));
       let damaged = 0;
       for (let k = 0; k < count; k++) {
@@ -795,7 +795,7 @@ export const EVENT_DEFS: EventDef[] = [
     pickTile: (ctx) =>
       pickBuilding(ctx, (i) => {
         const b = ctx.state.tiles[i].building!;
-        if (isRoad(b.type) || BUILDINGS[b.type].category === "special" || b.level === 0) return false;
+        if (isRoad(b.type) || BUILDINGS[b.type].category === "special" || BUILDINGS[b.type].category === "rail" || b.level === 0) return false;
         const { width, height } = ctx.state;
         const x = i % width;
         const y = Math.floor(i / width);

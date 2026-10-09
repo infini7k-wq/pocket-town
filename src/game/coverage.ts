@@ -3,6 +3,7 @@
 import { BUILDINGS } from "./buildings";
 import { DISCONNECTED_FACTOR, SHOP_RADIUS } from "./config";
 import { forEachInRange } from "./map";
+import { busStopBoost, type BusRoutes } from "./rail";
 import type { RoadNetwork } from "./roads";
 import type { Building, CoverageKind, GameState } from "./types";
 
@@ -25,7 +26,7 @@ export function effectiveRadius(b: Pick<Building, "type" | "level">): number {
   return b.type === "commercial" ? (SHOP_RADIUS[b.level] ?? def.coverage.radius) : def.coverage.radius;
 }
 
-export function computeCoverage(state: Pick<GameState, "tiles" | "width" | "height">, net: RoadNetwork): CoverageMap {
+export function computeCoverage(state: Pick<GameState, "tiles" | "width" | "height">, net: RoadNetwork, routes?: BusRoutes): CoverageMap {
   const n = state.tiles.length;
   const map = Object.fromEntries(COVERAGE_KINDS.map((k) => [k, new Array<number>(n).fill(0)])) as CoverageMap;
 
@@ -42,7 +43,13 @@ export function computeCoverage(state: Pick<GameState, "tiles" | "width" | "heig
     }
     const target = map[def.coverage.kind];
     // お店は大きいほど遠くから客が来る
-    const radius = effectiveRadius(b);
+    let radius = effectiveRadius(b);
+    // バス停：路線になっていると強く、ターミナル・駅につながると範囲も広がる
+    if (b.type === "busStop" && routes) {
+      const boost = busStopBoost(routes, state as GameState, i);
+      strength = boost.strength * (net.connected[i] ? 1 : DISCONNECTED_FACTOR);
+      radius = boost.radius;
+    }
     forEachInRange(i, def.size ?? 1, radius, state.width, state.height, (j, d) => {
       const v = strength * falloff(d, radius);
       if (v > target[j]) target[j] = v;

@@ -114,7 +114,7 @@ export function cityEnvironment(state: GameState, env: number[]): number {
   let count = 0;
   state.tiles.forEach((t, i) => {
     const type = t.building?.type;
-    if (!type || type === "road" || type === "avenue" || type === "annex") return;
+    if (!type || type === "road" || type === "avenue" || type === "annex" || type === "rail") return;
     sum += env[i];
     count++;
   });

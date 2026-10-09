@@ -1,6 +1,7 @@
 // 財政エンジン：税収・維持費・利息を計算する。
 
-import { totalPolicyUpkeep } from "./policies";
+import { policyState, totalPolicyUpkeep } from "./policies";
+import { RAIL } from "./rail";
 import { BUILDINGS, isRoad } from "./buildings";
 import { ECONOMY, TRAFFIC } from "./config";
 import type { Employment } from "./employment";
@@ -16,6 +17,8 @@ export interface BudgetContext {
   connected: boolean[];
   trafficLevel: TrafficLevel[];
   fx: Effects;
+  /** 電車の乗客（1か月あたり） */
+  riders?: number;
 }
 
 /** 住民1人あたりの住宅税（月額） */
@@ -48,7 +51,8 @@ export function computeBudget(state: GameState, ctx: BudgetContext): BudgetBreak
     if (!b) return;
     const def = BUILDINGS[b.type];
     const building = def.category === "project" && b.level === 0; // 建設中の大型施設は維持費なし
-    if (isRoad(b.type)) roads += def.upkeep;
+    // 道路・線路の維持費（踏切は道路と線路の両方）
+    if (isRoad(b.type) || b.type === "rail") roads += def.upkeep + (b.rail ? BUILDINGS.rail.upkeep : 0);
     else if (!building) services += def.upkeep;
     if (def.revenue && b.level > 0 && ctx.connected[i]) facilities += def.revenue;
     if (b.type === "commercial") {
@@ -57,6 +61,8 @@ export function computeBudget(state: GameState, ctx: BudgetContext): BudgetBreak
       industrial += emp.workersAt[i] * ECONOMY.indTaxUnit * state.taxes.industrial * congestionEfficiency(state, i, ctx.trafficLevel);
     }
   });
+  // 電車の運賃（公共交通無料化の条例中はなし）
+  if (!policyState(state).active.some((p) => p.id === "freeTransit")) facilities += (ctx.riders ?? 0) * RAIL.fare;
   // 誘致した大型店などの追加雇用
   commercial += ctx.fx.extraComJobs * emp.comEfficiency * emp.jobFillRate * ECONOMY.comTaxUnit * state.taxes.commercial;
 

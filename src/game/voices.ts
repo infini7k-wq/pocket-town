@@ -13,6 +13,7 @@ import { getPolicy, policyState } from "./policies";
 import { policyFor } from "./advice";
 import { promiseLabel, promiseProgress } from "./politics";
 import { isUnlockedTile, neighbors4 } from "./map";
+import { stationWorking } from "./rail";
 import { getRank, isBuildingUnlocked, mayorTitle, rankIndex } from "./progression";
 import type { Rng } from "./rng";
 import type { BuildingType, GameState, MonthReport, Tone, Voice } from "./types";
@@ -266,12 +267,17 @@ export function voiceCandidates(state: GameState, a: CityAnalysis, report: Month
     });
     out.push({
       id: "traffic",
-      tool: rank >= 1 ? "busStop" : "road",
+      tool: rank >= 2 && a.congestion > 25 ? (state.tiles.some((t) => t.building?.type === "rail") ? "railStation" : "rail") : rank >= 1 ? "busStop" : "road",
       severity: a.congestion * 1.2,
       tone: "bad",
       persona: "worker",
       text: "朝の渋滞がひどくて会社に遅刻しそう。",
-      hint: rank >= 1 ? "「場所を見る」で混んでいる道路を調べると、車を出している建物がわかる。大通り・バス停の範囲・建物の反対側の道路で減らそう" : "建物の反対側にも道路を通すと車が分かれる（「町」になると大通りとバス停が使える）",
+      hint:
+        rank >= 2
+          ? "「場所を見る」で混んでいる道路を調べると、車を出している建物がわかる。大通り・バス路線のほか、線路と鉄道駅を置くと駅から4マス以内の車が最大6割減る"
+          : rank >= 1
+            ? "「場所を見る」で混んでいる道路を調べると、車を出している建物がわかる。大通り・バス停の範囲・建物の反対側の道路で減らそう（「市」になると鉄道が使える）"
+            : "建物の反対側にも道路を通すと車が分かれる（「町」になると大通りとバス停が使える）",
       tile: worst >= 0 ? worst : undefined,
     });
   }
@@ -282,10 +288,16 @@ export function voiceCandidates(state: GameState, a: CityAnalysis, report: Month
   if (unzoned >= 0) {
     out.push({ id: "noRoad", tool: "road", severity: 50, tone: "bad", persona: "newcomer", text: "土地はあるのに道路がなくて、家が建てられない。", hint: "建物は道路に面していないと使えない", tile: unzoned });
   } else {
-    const disconnected = state.tiles.findIndex((t, i) => t.building && !isRoad(t.building.type) && BUILDINGS[t.building.type].category !== "special" && a.net.roadAccess[i] && !a.net.connected[i]);
+    const disconnected = state.tiles.findIndex((t, i) => t.building && !isRoad(t.building.type) && BUILDINGS[t.building.type].category !== "special" && BUILDINGS[t.building.type].category !== "rail" && a.net.roadAccess[i] && !a.net.connected[i]);
     if (disconnected >= 0) {
       out.push({ id: "disconnected", tool: "road", severity: 42, tone: "bad", persona: "resident", text: "うちの前の道、街の中心までつながってないんだよね。", hint: "道路を役所までつなげよう（つながるまで効果が半分）", tile: disconnected });
     }
+  }
+
+  // 電車が走っていない鉄道駅
+  const idleStation = state.tiles.findIndex((t, i) => t.building?.type === "railStation" && !stationWorking(a.rail, i));
+  if (idleStation >= 0) {
+    out.push({ id: "stationIdle", tool: "rail", severity: 40, tone: "bad", persona: "student", text: "駅はできたのに、電車が来ないんだけど…", hint: "線路をのばして、ほかの駅か地図の端（となり町）につなぐと電車が走る", tile: idleStation });
   }
 
   // ---------- お店・工場の過不足 ----------
@@ -317,7 +329,7 @@ export function voiceCandidates(state: GameState, a: CityAnalysis, report: Month
     const projectHint = "新幹線駅・大学・空港などの大型プロジェクトから6マス以内なら5段目に育つ（メガシティからは2つずつ建てられる）";
     const map: Record<string, { text: string; hint: string; tool?: BuildingType; openTab?: "finance" | "policy"; persona: keyof typeof PERSONAS }> = {
       "residential:school": { persona: "parent", text: `マンションに建て替えたいのに、学校が遠くて…（${n}棟が待っているよ）`, hint: rank >= 2 ? "学校（範囲4マス）や大学（範囲8マス）の近くの住宅がマンションに育つ" : "学校（範囲4マス）の近くの住宅がマンションに育つ", tool: "school" },
-      "residential:transit": { persona: "worker", text: `${next5 ? "超高層レジデンス" : "タワーマンション"}を建てたいのに、近くにバス停がないんだって（${n}棟）`, hint: "バス停（範囲3マス）やバスターミナル（範囲5マス）の近くの住宅が大きく育つ", tool: busTool },
+      "residential:transit": { persona: "worker", text: `${next5 ? "超高層レジデンス" : "タワーマンション"}を建てたいのに、近くにバス停がないんだって（${n}棟）`, hint: rank >= 2 ? "バス停（範囲3マス）・バスターミナル（範囲5マス）・電車が走る鉄道駅（範囲4マス）の近くの住宅が大きく育つ" : "バス停（範囲3マス）やバスターミナル（範囲5マス）の近くの住宅が大きく育つ", tool: busTool },
       "commercial:catchment": { persona: "shop", text: `大きなお店にしたいけど、周りに住む人が少なくて…（${n}棟）`, hint: "お店の周り4マスに住宅を増やそう。⛲広場の近くなら必要な人数が半分になる", tool: isBuildingUnlocked("plaza", state.rank) ? "plaza" : "residential" },
       "residential:happiness": { persona: "resident", text: `住みやすさが足りなくて、家を大きくできないみたい（${n}棟）`, hint: "公園・学校・病院の範囲を広げ、騒音や渋滞を減らそう", tool: rank >= 1 ? "bigPark" : "park" },
       "residential:env": { persona: "resident", text: `空気が悪くて、大きな家が建たないみたい（${n}棟）`, hint: "工場から離すか、公園を増やして空気をきれいにしよう", tool: "park" },
@@ -406,6 +418,8 @@ export function voiceCandidates(state: GameState, a: CityAnalysis, report: Month
   if (hospital !== undefined) out.push({ id: "newHospital", severity: 32, tone: "good", persona: "elder", text: "病院が近くにできて、ひと安心だよ。", tile: hospital });
   const bus = recentlyBuilt(state, "busStop") ?? recentlyBuilt(state, "station");
   if (bus !== undefined) out.push({ id: "newTransit", severity: 28, tone: "good", persona: "student", text: "通学が楽になった！", tile: bus });
+  const train = recentlyBuilt(state, "railStation");
+  if (train !== undefined && stationWorking(a.rail, train)) out.push({ id: "newTrain", severity: 34, tone: "good", persona: "worker", text: "駅ができて電車で通勤できるようになった！", tile: train });
   const up = report?.changes.find((c) => c.kind === "levelUp" && state.tiles[c.tile].building?.type === "residential");
   if (up) {
     out.push({

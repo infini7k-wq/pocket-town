@@ -21,6 +21,9 @@ export type BuildingType =
   | "bulletTrain"
   | "themePark"
   | "airport"
+  /** 鉄道 */
+  | "rail"
+  | "railStation"
   /** 町の個性ごとの専用プロジェクト */
   | "forestPark"
   | "kombinat"
@@ -55,6 +58,8 @@ export interface Building {
   buildLeft?: number;
   /** 2×2 の大型施設の一部（annex）なら、本体（左上）のマス */
   anchor?: number;
+  /** 道路・大通りのマスに線路が通っている（踏切） */
+  rail?: boolean;
 }
 
 export interface Tile {
