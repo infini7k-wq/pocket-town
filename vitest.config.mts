@@ -8,5 +8,7 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["src/**/*.test.ts"],
+    // 自動プレイで何十年も進めるテストがあるので、GitHub Actions の遅いマシンでも落ちないよう長めに
+    testTimeout: 30_000,
   },
 });
