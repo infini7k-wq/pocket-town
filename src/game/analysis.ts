@@ -8,6 +8,7 @@ import { computeBudget } from "./economy";
 import { computeEmployment, type Employment } from "./employment";
 import { cityEnvironment, computeEnvironment, computeNoise } from "./environment";
 import { eraModifiers } from "./eras";
+import { computeLandValue, type LandValueContext } from "./landvalue";
 import { weatherModifiers } from "./weather";
 import { policyModifiers } from "./policies";
 import { sumEffects, type Effects } from "./modifiers";
@@ -28,6 +29,8 @@ export interface CityAnalysis {
   traffic: TrafficResult;
   env: number[];
   noise: number[];
+  /** 場所ごとの地価（0〜100） */
+  landValue: number[];
   happiness: number[];
   fx: Effects;
   population: number;
@@ -133,6 +136,7 @@ export function analyzeCity(state: GameState): CityAnalysis {
     ride: rail.ride,
   };
   const happiness = computeHappiness(state, ctx);
+  const landValue = computeLandValue(state, { net, coverage, env, noise, trafficLevel: traffic.level, ride: rail.ride });
   const cityH = cityHappiness(state, happiness);
 
   let buildings = 0;
@@ -155,6 +159,7 @@ export function analyzeCity(state: GameState): CityAnalysis {
     traffic,
     env,
     noise,
+    landValue,
     happiness,
     fx,
     population: employment.population,
@@ -162,10 +167,14 @@ export function analyzeCity(state: GameState): CityAnalysis {
     cityEnvironment: cityEnvironment(state, env),
     congestion: traffic.congestion,
     demand: computeDemand(state, employment, cityH, fx),
-    budget: computeBudget(state, { employment, connected: net.connected, trafficLevel: traffic.level, fx, riders: traffic.riders }),
+    budget: computeBudget(state, { employment, connected: net.connected, trafficLevel: traffic.level, fx, riders: traffic.riders, landValue }),
     fireRisk: buildings ? uncovered / buildings : 0,
     unconnected,
   };
+}
+
+export function landValueContext(a: CityAnalysis): LandValueContext {
+  return { net: a.net, coverage: a.coverage, env: a.env, noise: a.noise, trafficLevel: a.traffic.level, ride: a.rail.ride };
 }
 
 export function happinessContext(a: CityAnalysis): HappinessContext {

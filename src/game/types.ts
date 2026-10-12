@@ -24,6 +24,9 @@ export type BuildingType =
   /** 鉄道 */
   | "rail"
   | "railStation"
+  | "subway"
+  | "subwayStation"
+  | "freightStation"
   /** 町の個性ごとの専用プロジェクト */
   | "forestPark"
   | "kombinat"
@@ -65,6 +68,10 @@ export interface Building {
 export interface Tile {
   terrain: Terrain;
   building: Building | null;
+  /** 地下鉄のトンネルが通っている（地上の建物とは別に、地下にある） */
+  subway?: boolean;
+  /** 地下鉄を掘った turn（その月のうちに埋めれば全額戻る） */
+  subwayTurn?: number;
 }
 
 export type TraitId = "coastal" | "industrial" | "suburban" | "merchant";

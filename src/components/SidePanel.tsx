@@ -16,6 +16,7 @@ import {
   RAIL,
   lineStyle,
   busStyle,
+  hasStation,
   nextAdvice,
   demandLevel,
   DEMAND,
@@ -646,9 +647,9 @@ function coverageShare(state: GameState, a: CityAnalysis, kind: "park" | "educat
 function TransitCard() {
   const { state, analysis: a } = useCity();
   const { showOverlay } = useGame();
-  const lines = a.rail.lines.map((l, id) => ({ l, id })).filter(({ l }) => l.stations.length > 0);
+  const lines = a.rail.lines.map((l, id) => ({ l, id })).filter(({ l }) => hasStation(l));
   // 駅のない線路は、まとめて1行にする
-  const bare = a.rail.lines.filter((l) => l.stations.length === 0);
+  const bare = a.rail.lines.filter((l) => !hasStation(l));
   const buses = a.busRoutes.routes.map((r, id) => ({ r, id })).filter(({ r }) => r.length >= 2);
   const lonely = a.busRoutes.routes.filter((r) => r.length === 1).length;
   if (lines.length === 0 && buses.length === 0 && rankIndex(state.rank) < rankIndex("city")) return null;
@@ -662,7 +663,12 @@ function TransitCard() {
             <li key={`r${id}`} className="flex items-center justify-between gap-2">
               <span className="min-w-0 truncate">
                 <span style={{ color: st.color }}>■</span> {st.name}
-                <span className="ml-1 text-slate-400">駅{l.stations.length}{l.edge ? "・となり町" : ""}{l.shinkansen ? "・新幹線" : ""}</span>
+                <span className="ml-1 text-slate-400">
+                  {l.stations.length > 0 ? `駅${l.stations.length}` : ""}
+                  {l.freight.length > 0 ? `${l.stations.length > 0 ? "・" : ""}貨物駅${l.freight.length}` : ""}
+                  {l.edge ? "・となり町" : ""}
+                  {l.shinkansen ? "・新幹線" : ""}
+                </span>
               </span>
               <span className={l.working ? "text-emerald-600" : "text-amber-600"}>{l.working ? "運行中" : "未開通"}</span>
             </li>

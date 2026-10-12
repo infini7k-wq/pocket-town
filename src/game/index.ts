@@ -6,6 +6,8 @@ export * from "./buildings";
 export * from "./map";
 export * from "./roads";
 export * from "./rail";
+export * from "./landvalue";
+export * from "./problems";
 export * from "./coverage";
 export * from "./employment";
 export * from "./traffic";

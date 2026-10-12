@@ -283,16 +283,64 @@ export const BUILDINGS: Record<BuildingType, BuildingDef> = {
     name: "鉄道駅",
     description: "線路の上に、道路に面して置く。線路でほかの駅か地図の端につながると、周りの車が大きく減る",
     category: "service",
-    emoji: ["", "🚉"],
+    emoji: ["", "🚉", "🚉", "🏬"],
     cost: 1_500_000,
     upkeep: 80_000,
-    jobs: ALL_LEVELS(6),
-    effect: "建物から4マス以内の車を最大6割減らす（路線につながる駅が多いほど効く）。満足度も上がり、タワーマンションなどに育つ条件にもなる",
+    jobs: [0, 6, 20, 60],
+    levelNames: ["", "鉄道駅", "大きな駅", "駅ビル"],
+    effect: "建物から4マス以内の車を最大6割減らす（路線につながる駅が多いほど効く）。満足度も上がり、タワーマンションなどに育つ条件にもなる。乗客が増えると大きな駅・駅ビルに育つ",
     unlockRank: "city",
     removable: true,
     paintable: false,
     color: "#7e57c2",
     trips: 12,
+  },
+  subway: {
+    type: "subway",
+    name: "地下鉄",
+    description: "なぞって地下にトンネルを掘る。建物や道路の下も通せる。地下鉄駅・線路とつながると電車が走る",
+    category: "rail",
+    emoji: ["", "🚇"],
+    cost: 250_000,
+    upkeep: 6_000,
+    jobs: [0, 0],
+    unlockRank: "metropolis",
+    removable: true,
+    paintable: true,
+    color: "#475569",
+  },
+  subwayStation: {
+    type: "subwayStation",
+    name: "地下鉄駅",
+    description: "地下鉄のトンネルの上の空き地に、道路に面して置く。効き目は鉄道駅と同じ",
+    category: "service",
+    emoji: ["", "Ⓜ️", "Ⓜ️", "🏬"],
+    cost: 2_500_000,
+    upkeep: 120_000,
+    jobs: [0, 6, 20, 60],
+    levelNames: ["", "地下鉄駅", "大きな地下鉄駅", "駅ビル"],
+    effect: "建物から4マス以内の車を最大6割減らす（鉄道駅と同じ）。地上は1マスで済むので、混み合った街の真ん中に置ける",
+    unlockRank: "metropolis",
+    removable: true,
+    paintable: false,
+    color: "#475569",
+    trips: 12,
+  },
+  freightStation: {
+    type: "freightStation",
+    name: "貨物駅",
+    description: "線路の上に、道路に面して置く。電車が走る路線にあると、近くの工場のトラックが貨物列車に変わる",
+    category: "service",
+    emoji: ["", "🚛"],
+    cost: 1_200_000,
+    upkeep: 60_000,
+    jobs: ALL_LEVELS(10),
+    effect: "建物から5マス以内の工場の車を半分にし、工場の注文も増える（街全体で+60人分）",
+    unlockRank: "city",
+    removable: true,
+    paintable: false,
+    color: "#a16207",
+    trips: 10,
   },
   station: {
     type: "station",
@@ -578,6 +626,9 @@ export const BUILD_ORDER: BuildingType[] = [
   "landmark",
   "rail",
   "railStation",
+  "freightStation",
+  "subway",
+  "subwayStation",
   ...PROJECTS,
 ];
 
@@ -594,6 +645,16 @@ export function isRoad(type: BuildingType | undefined): boolean {
 /** 線路のマス（駅は含まない） */
 export function isRail(type: BuildingType | undefined): boolean {
   return type === "rail";
+}
+
+/** 旅客の駅（鉄道駅・地下鉄駅） */
+export function isPassengerStation(type: BuildingType | undefined): boolean {
+  return type === "railStation" || type === "subwayStation";
+}
+
+/** 線路の上に置く駅（撤去すると線路に戻る） */
+export function isTrackStation(type: BuildingType | undefined): boolean {
+  return type === "railStation" || type === "freightStation";
 }
 
 /** なぞって撤去できるもの（ゾーン・道路・線路。公共施設や大型施設はドラッグでは壊さない） */

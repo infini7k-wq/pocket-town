@@ -9,14 +9,20 @@ import {
   checkReclaim,
   busStopBoost,
   busStyle,
-  RAIL,
+  stationRange,
+  cityProblems,
   computeRailNetwork,
   dragDemolishable,
   isTrackTile,
+  isTrackStation,
+  isStationType,
+  hasStation,
   lineStyle,
   stationWorking,
   effectiveRadius,
   isUpgradeTarget,
+  isZone,
+  neighbors4,
   demolish,
   footprint,
   formatYen,
@@ -30,6 +36,7 @@ import {
   visibleBounds,
   readyToGrow,
   type BuildingType,
+  type CityAnalysis,
   type CoverageKind,
   type GameState,
   seasonOf,
@@ -44,6 +51,7 @@ const VIEW_MODES: Array<{ id: Overlay; label: string; icon: string }> = [
   { id: "none", label: "通常", icon: "🗺️" },
   { id: "traffic", label: "交通", icon: "🚗" },
   { id: "lines", label: "路線", icon: "🚆" },
+  { id: "land", label: "地価", icon: "💴" },
   { id: "env", label: "環境", icon: "🌿" },
   { id: "happiness", label: "満足度", icon: "😊" },
 ];
@@ -80,6 +88,12 @@ const MAX_TILE = 64;
 const TRAFFIC_COLORS = ["", "rgba(34,197,94,0.75)", "rgba(245,158,11,0.8)", "rgba(239,68,68,0.85)"];
 
 /** 0〜100 を赤→黄→緑に */
+/** 地価の色：安い（薄い紫）→ 高い（濃い紫） */
+function landColor(v: number): string {
+  const t = Math.max(0, Math.min(1, v / 100));
+  return `hsla(275, 70%, ${78 - t * 40}%, ${0.15 + t * 0.6})`;
+}
+
 function scaleColor(v: number, alpha = 0.55): string {
   const hue = Math.max(0, Math.min(120, (v / 100) * 120));
   return `hsla(${hue}, 80%, 48%, ${alpha})`;
@@ -94,7 +108,7 @@ const FLOATER_TONE = {
 
 export function CityMap() {
   const { state, analysis } = useCity();
-  const { tool, selected, flash, overlay, setOverlay, applyToolAt, endStroke, floaters, banner } = useGame();
+  const { tool, selected, flash, overlay, setOverlay, applyToolAt, applyZonesAt, endStroke, floaters, banner, focusTile, toast } = useGame();
   const wrapRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(0);
   /** 拡大率（null = 自動：スマホなどでマスが小さすぎるときだけ拡大） */
@@ -102,12 +116,20 @@ export function CityMap() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [mouseHover, setHover] = useState<number | null>(null);
   const painting = useRef(false);
+  const rectStart = useRef<number | null>(null);
+  const rectToolAtStart = useRef<Tool | null>(null);
   const lastTile = useRef<number | null>(null);
   // スマホ：公共施設などは「1回目で確認・2回目で建設」
   const [pendingTap, setPendingTap] = useState<{ tool: string; tile: number } | null>(null);
   const pending = pendingTap && pendingTap.tool === tool ? pendingTap.tile : null;
   const hover = mouseHover ?? pending;
-  const [draft, setDraft] = useState<{ tool: string; tiles: number[] } | null>(null);
+  const [draft, setDraft] = useState<{ tool: string; tiles: number[]; noRoad?: number } | null>(null);
+  // 住宅・商業・工業は「四角でまとめて」置く（オフにすると、なぞった道のりだけ）
+  const [zoneRect, setZoneRectState] = useState(readZoneRect);
+  const setZoneRect = (v: boolean) => {
+    setZoneRectState(v);
+    saveZoneRect(v);
+  };
   const [moveModeState, setMoveModeState] = useState(false);
   // ツールを変えたら下書きは捨てる
   const [draftTool, setDraftTool] = useState(tool);
@@ -222,6 +244,19 @@ export function CityMap() {
     return () => window.clearTimeout(timer);
   }, [flash]);
 
+  // 「次の困りごとへ」：押すたびに、前に見せた場所の次の困りごとへ移る（一覧が変わっても続きから）
+  const problems = useMemo(() => cityProblems(state, analysis), [state, analysis]);
+  const lastProblem = useRef(-1);
+  const nextProblem = () => {
+    if (problems.length === 0) return;
+    // 前に見せた順番の次へ（直した困りごとが一覧から消えても、だいたい続きから）
+    const idx = (lastProblem.current + 1) % problems.length;
+    const p = problems[idx];
+    lastProblem.current = idx;
+    focusTile(p.tile);
+    toast(`${p.emoji} ${p.text}（${idx + 1}/${problems.length}）`, p.kind === "lonelyBus" ? "info" : "bad");
+  };
+
   // 大型施設（2×2）を置こうとしているときの4マス
   const footprintTiles = useMemo(() => {
     if (hover === null || tool === "inspect" || tool === "bulldoze" || tool === "reclaim" || BUILDINGS[tool].size !== 2) return null;
@@ -234,18 +269,18 @@ export function CityMap() {
     let center: number | null = null;
     let radius = 0;
     let bigSize = 1;
-    if (tool !== "inspect" && tool !== "bulldoze" && tool !== "reclaim" && hover !== null && (BUILDINGS[tool].coverage || tool === "railStation")) {
+    if (tool !== "inspect" && tool !== "bulldoze" && tool !== "reclaim" && hover !== null && (BUILDINGS[tool].coverage || isStationType(tool))) {
       center = hover;
-      radius = tool === "railStation" ? RAIL.radius : BUILDINGS[tool].coverage!.radius;
+      radius = isStationType(tool) ? stationRange(tool) : BUILDINGS[tool].coverage!.radius;
       bigSize = BUILDINGS[tool].size ?? 1;
     } else if (tool === "inspect" && selected !== null) {
       const b = state.tiles[selected]?.building;
       if (b && b.level === 0 && (BUILDINGS[b.type].category === "project" || b.type === "commercial")) return set;
       const cov = b ? BUILDINGS[b.type].coverage : undefined;
-      if (b && (cov || b.type === "railStation")) {
+      if (b && (cov || isStationType(b.type))) {
         center = selected;
-        // バス停は路線になると範囲が広がる。鉄道駅は電車の効き目の範囲
-        radius = b.type === "busStop" ? busStopBoost(analysis.busRoutes, state, selected).radius : b.type === "railStation" ? RAIL.radius : effectiveRadius(b);
+        // バス停は路線になると範囲が広がる。駅は電車の効き目の範囲
+        radius = b.type === "busStop" ? busStopBoost(analysis.busRoutes, state, selected).radius : isStationType(b.type) ? stationRange(b.type, b.level) : effectiveRadius(b);
         bigSize = BUILDINGS[b.type].size ?? 1;
       }
     }
@@ -262,13 +297,13 @@ export function CityMap() {
       return { ok: c.ok, emoji: "🟩", text: c.ok ? `埋め立て ¥${c.cost.toLocaleString("ja-JP")}` : c.reason };
     }
     if (tool === "bulldoze") {
-      if (!state.tiles[hover]?.building) return null;
+      if (!state.tiles[hover]?.building && !state.tiles[hover]?.subway) return null;
       const c = checkDemolish(state, hover);
       return { ok: c.ok, emoji: "🚜", text: c.ok ? (c.refund > 0 ? `撤去 +¥${c.refund.toLocaleString("ja-JP")}` : "撤去") : c.reason };
     }
     // 建てた直後や、すでに建物があるマスではエラーを出さない（大通りへの置き換えだけは案内する）
     const existing = state.tiles[hover]?.building;
-    if (existing && !isUpgradeTarget(tool, existing) && !(tool === "railStation" && existing.type === "rail")) return null;
+    if (existing && !isUpgradeTarget(tool, existing) && !(isTrackStation(tool) && existing.type === "rail")) return null;
     if ((isRoad(tool) || tool === "rail") && existing && isUpgradeTarget(tool, existing) && (tool === "rail" || existing.type === "rail")) {
       const c = checkPlacement(state, tool, hover);
       return { ok: c.ok, emoji: "🚧", text: c.ok ? `踏切 ¥${c.cost.toLocaleString("ja-JP")}` : c.reason };
@@ -288,6 +323,9 @@ export function CityMap() {
 
   /** なぞって連続で使えるツールか（道路・ゾーン・撤去・埋め立て） */
   const paintTool = tool !== "inspect" && (tool === "bulldoze" || tool === "reclaim" || !!BUILDINGS[tool].paintable);
+  /** 四角でまとめて置く道具か（住宅・商業・工業で、四角モードのとき） */
+  const rectToolAvailable = tool !== "inspect" && tool !== "bulldoze" && tool !== "reclaim" && isZone(tool);
+  const rectTool = zoneRect && rectToolAvailable;
 
   // ---- スマホ：なぞった場所は「下書き」にして、合計費用を見てから確定する（2本指で地図を動かす） ----
   const draftTiles = draft && draft.tool === tool ? draft.tiles : null;
@@ -300,9 +338,18 @@ export function CityMap() {
       return { tool, tiles: next };
     });
   };
+  /** 四角の下書き：始点と今のマスを角にした四角（この操作の前の下書きはそのまま残す） */
+  const setRectDraft = (a: number, b: number) => {
+    const r = rectTiles(state, a, b);
+    strokeTiles.current = r.tiles;
+    const before = strokeHadBefore.current;
+    setDraft({ tool, tiles: [...before, ...r.tiles.filter((j) => !before.includes(j))], noRoad: r.noRoad });
+  };
   const confirmDraft = () => {
     if (!draftTiles || draftTiles.length === 0) return;
-    draftTiles.forEach((j, k) => applyToolAt(j, k > 0));
+    // 住宅・商業・工業はまとめて1回で置く（大きな四角でも固まらない）
+    if (tool !== "inspect" && tool !== "bulldoze" && tool !== "reclaim" && isZone(tool)) applyZonesAt(draftTiles);
+    else draftTiles.forEach((j, k) => applyToolAt(j, k > 0));
     endStroke();
     setDraft(null);
   };
@@ -345,12 +392,25 @@ export function CityMap() {
     painting.current = true;
     lastTile.current = i;
     if (tool !== "inspect") capture(e);
+    if (rectTool) {
+      // 四角：ドラッグ中は下書きを見せ、離したときにまとめて建てる
+      rectStart.current = i;
+      rectToolAtStart.current = tool;
+      strokeHadBefore.current = [];
+      setRectDraft(i, i);
+      return;
+    }
     applyToolAt(i, false);
   };
   const onPointerMove = (e: React.PointerEvent) => {
     if (e.pointerType !== "mouse") return;
     const i = tileAt(e.clientX, e.clientY);
     setHover(i);
+    if (painting.current && rectTool && rectStart.current !== null && i !== null && i !== lastTile.current) {
+      lastTile.current = i;
+      setRectDraft(rectStart.current, i);
+      return;
+    }
     if (painting.current && tool !== "inspect" && i !== null && i !== lastTile.current) {
       // 速く動かしても途切れないよう、前のマスとの間も埋める
       const path = lastTile.current !== null ? gridPath(lastTile.current, i, state.width) : [i];
@@ -359,8 +419,16 @@ export function CityMap() {
     }
   };
   const stopPainting = () => {
+    const wasRect = painting.current && rectStart.current !== null;
     painting.current = false;
     lastTile.current = null;
+    rectStart.current = null;
+    if (wasRect) {
+      // 四角の下書きをまとめて建てる（ドラッグ中に道具を変えたら建てない）
+      if (rectToolAtStart.current === tool) applyZonesAt(strokeTiles.current);
+      strokeTiles.current = [];
+      setDraft(null);
+    }
     endStroke();
   };
 
@@ -414,8 +482,9 @@ export function CityMap() {
         e.preventDefault();
         strokeHadBefore.current = draftTiles ?? [];
         strokeTiles.current = [i];
-        gesture.current = { kind: "draw", last: i, id: t.identifier };
-        addToDraft([i]);
+        gesture.current = { kind: "draw", last: i, id: t.identifier, start: i };
+        if (rectTool) setRectDraft(i, i);
+        else addToDraft([i]);
       } else {
         // 指を離したときにタップとして扱う（動かしたら・画面が動いていたらスクロール）
         gesture.current = { kind: "tap", x: t.clientX, y: t.clientY, tile: i, wy: window.scrollY, sy: scrollRef.current?.scrollTop ?? 0 };
@@ -459,8 +528,12 @@ export function CityMap() {
         if (!t) return;
         const i = tileAt(t.clientX, t.clientY);
         if (i === null || i === g.last) return;
+        gesture.current = { ...g, last: i, moved: true };
+        if (rectTool) {
+          setRectDraft(g.start, i);
+          return;
+        }
         const path = gridPath(g.last, i, state.width);
-        gesture.current = { ...g, last: i };
         strokeTiles.current = [...strokeTiles.current, ...path];
         addToDraft(path);
       } else if (g.kind === "tap") {
@@ -495,7 +568,7 @@ export function CityMap() {
       } else if (g.kind === "draw") {
         // 1マスだけの下書きで、同じマスをもう一度タップしたら確定
         const stroke = strokeTiles.current;
-        if (stroke.length === 1 && strokeHadBefore.current.length === 1 && strokeHadBefore.current[0] === stroke[0]) confirmDraft();
+        if (!g.moved && stroke.length === 1 && strokeHadBefore.current.length === 1 && strokeHadBefore.current[0] === stroke[0]) confirmDraft();
       }
       strokeTiles.current = [];
     },
@@ -517,7 +590,12 @@ export function CityMap() {
   const cancelStroke = () => {
     const stroke = strokeTiles.current;
     const before = strokeHadBefore.current;
-    if (stroke.length > 0) setDraft((d) => (d ? { ...d, tiles: d.tiles.filter((j) => !stroke.includes(j) || before.includes(j)) } : d));
+    // 下書きを、この操作の前に戻す（四角の「飛ばしたマス」の数も消す）
+    setDraft((d) => {
+      if (!d) return d;
+      const tiles = d.tiles.filter((j) => !stroke.includes(j) || before.includes(j));
+      return tiles.length > 0 ? { tool: d.tool, tiles } : null;
+    });
     strokeTiles.current = [];
   };
   // イベントリスナーは一度だけ登録し、中身は毎回の描画で最新のものに差し替える
@@ -596,57 +674,14 @@ export function CityMap() {
       const t = state.tiles[i];
       const b = t.building;
       const road = isRoad(b?.type);
-      let roadMask = 0;
-      if (road) {
-        const [up, right, down, left] = [i - state.width, i + 1, i + state.width, i - 1];
-        if (y > 0 && isRoad(state.tiles[up].building?.type)) roadMask |= 1;
-        if (x < state.width - 1 && isRoad(state.tiles[right].building?.type)) roadMask |= 2;
-        if (y < state.height - 1 && isRoad(state.tiles[down].building?.type)) roadMask |= 4;
-        if (x > 0 && isRoad(state.tiles[left].building?.type)) roadMask |= 8;
-      }
-      const track = isTrackTile(state, i) && (b?.type === "rail" || b?.type === "railStation" || !!b?.rail);
-      let railMask: number | undefined;
-      if (track) {
-        railMask = 0;
-        const [up, right, down, left] = [i - state.width, i + 1, i + state.width, i - 1];
-        // 地図の端の線路は、となり町へ続くように外へ延ばして描く
-        if (y === 0 || isTrackTile(state, up)) railMask |= 1;
-        if (x === state.width - 1 || isTrackTile(state, right)) railMask |= 2;
-        if (y === state.height - 1 || isTrackTile(state, down)) railMask |= 4;
-        if (x === 0 || isTrackTile(state, left)) railMask |= 8;
-      }
+      const roadMask = road ? neighborMask(state, i, (j) => isRoad(state.tiles[j].building?.type)) : 0;
+      const track = isTrackTile(state, i) && (b?.type === "rail" || isTrackStation(b?.type) || !!b?.rail);
+      // 地図の端の線路は、となり町へ続くように外へ延ばして描く
+      const railMask = track ? neighborMask(state, i, (j) => isTrackTile(state, j), true) : undefined;
+      const subwayMask = t.subway ? neighborMask(state, i, (j) => isTrackTile(state, j)) : undefined;
       const locked = !isUnlockedTile(state, i);
-      let ov: string | undefined;
-      let dim = false;
-      if (overlay === "lines" && !locked) {
-        // 路線図：線路は路線の色、バスが走る道路は路線の色で薄く、それ以外は暗く
-        const lineId = analysis.rail.lineOf[i];
-        if (lineId >= 0 && (track || b?.type === "bulletTrain" || b?.type === "annex")) {
-          const st = lineStyle(state, analysis.rail, lineId);
-          ov = `${st.color}${analysis.rail.lines[lineId].working ? "99" : "55"}`;
-        } else if (busTiles.has(i)) ov = `${busStyle(analysis.busRoutes, busTiles.get(i)!).color}66`;
-        else if (analysis.busRoutes.routeOf.has(i)) ov = `${busStyle(analysis.busRoutes, analysis.busRoutes.routeOf.get(i)!).color}aa`;
-        else if (analysis.rail.ride[i] > 0) ov = `rgba(225,29,72,${0.08 + analysis.rail.ride[i] * 0.12})`;
-        else dim = true;
-      } else if (!locked && t.terrain !== "water") {
-        if (overlay === "traffic") {
-          if (road) ov = TRAFFIC_COLORS[analysis.traffic.level[i]];
-          else dim = true;
-        } else if (overlay === "env") ov = scaleColor(analysis.env[i]);
-        else if (overlay === "happiness") {
-          if (b?.type === "residential") ov = scaleColor(analysis.happiness[i], 0.65);
-          else dim = true;
-        } else if (covKind) {
-          const v = analysis.coverage[covKind][i];
-          if (v > 0) ov = `rgba(37,99,235,${0.15 + v * 0.4})`;
-        }
-      }
-      let badge: "noRoad" | "disconnected" | "noLine" | undefined;
-      if (b && !road && BUILDINGS[b.type].category !== "special" && BUILDINGS[b.type].category !== "rail") {
-        if (!analysis.net.roadAccess[i]) badge = "noRoad";
-        else if (!analysis.net.connected[i]) badge = "disconnected";
-        else if (b.type === "railStation" && !stationWorking(analysis.rail, i)) badge = "noLine";
-      }
+      const { ov, dim } = locked ? NO_OVERLAY : tileOverlay(state, analysis, i, overlay, covKind, busTiles);
+      const badge = tileBadge(state, analysis, i);
       rows.push(
         <TileView
           key={i}
@@ -659,6 +694,7 @@ export function CityMap() {
           abandoned={b?.abandoned ?? false}
           roadMask={roadMask}
           railMask={railMask}
+          subwayMask={subwayMask}
           traffic={road ? analysis.traffic.level[i] : 0}
           locked={locked}
           overlay={ov}
@@ -683,10 +719,21 @@ export function CityMap() {
 
   const hoverPos = hover !== null ? toXY(hover, state.width) : null;
 
+
   return (
     <div id="city-map" className="flex flex-col gap-2" style={{ scrollMarginTop: "calc(var(--header-h, 80px) + 8px)" }}>
       {/* 表示切り替え */}
       <div className="no-scrollbar -mx-1 flex items-center gap-1 overflow-x-auto px-1">
+        {problems.length > 0 && (
+          <button
+            type="button"
+            onClick={nextProblem}
+            className="flex shrink-0 items-center gap-1 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-black text-amber-800 ring-1 ring-amber-300"
+            title="道路がない・つながっていない・電車が来ない・空き家・渋滞などの場所を、押すたびに順番に見せます"
+          >
+            🔎 次の困りごと<span className="tabular rounded-full bg-amber-500 px-1.5 text-[10px] text-white">{problems.length}</span>
+          </button>
+        )}
         {VIEW_MODES.map((o) => (
           <ModeChip key={o.id} active={overlay === o.id} onClick={() => setOverlay(o.id)} icon={o.icon} label={o.label} />
         ))}
@@ -769,6 +816,17 @@ export function CityMap() {
             <WeatherLayer season={season} weather={weather} hidden={overlay !== "none"} />
           </div>
         )}
+        {rectToolAvailable && (
+          <button
+            type="button"
+            onClick={() => setZoneRect(!zoneRect)}
+            className={cx("absolute left-2 top-2 z-30 rounded-full px-3 py-1.5 text-xs font-black shadow-lg ring-1", zoneRect ? "bg-blue-600 text-white ring-blue-700" : "bg-white/95 text-slate-700 ring-slate-900/10")}
+            aria-pressed={zoneRect}
+            title={zoneRect ? "オン：四角でまとめて置きます（押すと、なぞった道のりだけに置く）" : "オフ：なぞった道のりだけに置きます（押すと四角でまとめて置く）"}
+          >
+            ⬜ 四角でまとめて{zoneRect ? "：オン" : "：オフ"}
+          </button>
+        )}
         {paintTool && (
           <button
             type="button"
@@ -792,15 +850,16 @@ export function CityMap() {
       </div>
       {paintTool && (
         <p className="hidden px-1 text-[11px] font-bold text-slate-400 pointer-coarse:block">
-          {moveMode ? "✋ 地図を動かすモード：1本指で地図・画面を動かせます。なぞるときは地図の右上の ✏️ を押してください" : "なぞると下書き → 下の「✓ 建設」で確定。地図を動かすときは2本指、または地図の右上の ✋"}
+          {moveMode ? "✋ 地図を動かすモード：1本指で地図・画面を動かせます。なぞるときは地図の右上の ✏️ を押してください" : rectTool ? "指で四角を描くと、道路に面したマスをまとめて下書き → 下の「✓ 建設」で確定。地図を動かすときは2本指、または地図の右上の ✋" : "なぞると下書き → 下の「✓ 建設」で確定。地図を動かすときは2本指、または地図の右上の ✋"}
         </p>
       )}
-      {draftTiles && draftSim && draftTiles.length > 0 && (
+      {draftTiles && draftSim && (draftTiles.length > 0 || !!draft?.noRoad) && (
         <div className="fixed inset-x-2 bottom-[calc(156px+env(safe-area-inset-bottom))] z-50 flex items-center gap-2 rounded-2xl bg-slate-900/95 px-3 py-2 text-white shadow-2xl lg:inset-x-auto lg:bottom-6 lg:left-1/2 lg:w-[30rem] lg:-translate-x-1/2">
           <div className="min-w-0 flex-1">
             <div className="truncate text-xs font-black">
               {draftSim.label} {draftSim.ok.size}マス
               {draftSim.bad.size > 0 && <span className="ml-1 text-rose-300">（{draftSim.bad.size}マスは不可）</span>}
+              {draft?.noRoad ? <span className="ml-1 text-slate-400">（道路に面していない{draft.noRoad}マスは飛ばします）</span> : null}
               {draftSim.skipped > 0 && <span className="ml-1 text-slate-400">（{draftSim.skipped}マスは{tool === "bulldoze" ? "ドラッグでは撤去しないので" : tool === "reclaim" ? "水辺ではないので" : "すでに建物があるので"}飛ばします）</span>}
             </div>
             <div className="tabular text-[11px] font-bold text-slate-300">
@@ -809,7 +868,7 @@ export function CityMap() {
               {draftSim.bridges > 0 && <span className="ml-1">🌉 {tool === "rail" ? "鉄橋" : "橋"}{draftSim.bridges}</span>}
               {draftSim.reason && <span className="ml-1 text-rose-300">{draftSim.reason}</span>}
             </div>
-            {draftSim.unlinked && <div className="text-[11px] font-bold text-amber-300">⚠️ まだ駅につながっていません（線路の上に鉄道駅を置くと電車が走ります）</div>}
+            {draftSim.unlinked && <div className="text-[11px] font-bold text-amber-300">⚠️ まだ駅につながっていません（{tool === "subway" ? "トンネルの上の空き地に地下鉄駅を置く" : "線路の上に鉄道駅を置く"}と電車が走ります）</div>}
           </div>
           <button type="button" onClick={() => setDraft(null)} className="rounded-full bg-white/15 px-3 py-2 text-xs font-black">
             ✕ やめる
@@ -885,6 +944,15 @@ function MapLegend({ overlay, hasRange }: { overlay: Overlay; hasRange: boolean 
         <span>🚫 電車が走っていない駅</span>
       </>
     );
+  } else if (overlay === "land") {
+    title = "場所ごとの地価（土地の人気）です。公園・学校・お店・駅・水辺・大型施設の近くで上がり、騒音・汚れた空気・渋滞で下がります。地価の高い場所の住宅とお店ほど税収が多くなります（最大±15%）。";
+    items = (
+      <>
+        <Swatch color={landColor(15)}>安い</Swatch>
+        <Swatch color={landColor(50)}>ふつう</Swatch>
+        <Swatch color={landColor(90)}>とても高い</Swatch>
+      </>
+    );
   } else if (overlay === "env") {
     title = "空気のきれいさです。工場や渋滞で汚れ、森や公園できれいになります。汚れた場所の住宅は満足度が下がります。";
     items = (
@@ -937,6 +1005,97 @@ function MapLegend({ overlay, hasRange }: { overlay: Overlay; hasRange: boolean 
   );
 }
 
+/** 「四角でまとめて」の設定（端末に覚えておく。読めない・書けないときは四角） */
+function readZoneRect(): boolean {
+  try {
+    return typeof window === "undefined" || window.localStorage.getItem("pocket-town/zone-rect") !== "off";
+  } catch {
+    return true;
+  }
+}
+function saveZoneRect(v: boolean) {
+  try {
+    window.localStorage.setItem("pocket-town/zone-rect", v ? "on" : "off");
+  } catch {
+    // 保存できなくても、この画面の間は切り替わる
+  }
+}
+
+/** となりのマスのつながり（上=1, 右=2, 下=4, 左=8）。edge = 地図の外もつながっているとみなす */
+function neighborMask(state: GameState, i: number, on: (j: number) => boolean, edge = false): number {
+  const { x, y } = toXY(i, state.width);
+  let m = 0;
+  if (y === 0 ? edge : on(i - state.width)) m |= 1;
+  if (x === state.width - 1 ? edge : on(i + 1)) m |= 2;
+  if (y === state.height - 1 ? edge : on(i + state.width)) m |= 4;
+  if (x === 0 ? edge : on(i - 1)) m |= 8;
+  return m;
+}
+
+const NO_OVERLAY: { ov?: string; dim: boolean } = { dim: false };
+
+/** 表示モードごとのマスの色（ov）と、暗くするか（dim） */
+function tileOverlay(state: GameState, a: CityAnalysis, i: number, overlay: Overlay, covKind: CoverageKind | null, busTiles: Map<number, number>): { ov?: string; dim: boolean } {
+  const t = state.tiles[i];
+  const b = t.building;
+  if (overlay === "lines") {
+    // 路線図：線路は路線の色、バスが走る道路は路線の色で薄く、それ以外は暗く
+    const lineId = a.rail.lineOf[i];
+    if (lineId >= 0) return { ov: `${lineStyle(state, a.rail, lineId).color}${a.rail.lines[lineId].working ? "99" : "55"}`, dim: false };
+    const bus = busTiles.get(i) ?? a.busRoutes.routeOf.get(i);
+    if (bus !== undefined) return { ov: `${busStyle(a.busRoutes, bus).color}${busTiles.has(i) ? "66" : "aa"}`, dim: false };
+    if (a.rail.ride[i] > 0) return { ov: `rgba(225,29,72,${0.08 + a.rail.ride[i] * 0.12})`, dim: false };
+    return { dim: true };
+  }
+  if (t.terrain === "water") return NO_OVERLAY;
+  if (overlay === "traffic") return isRoad(b?.type) ? { ov: TRAFFIC_COLORS[a.traffic.level[i]], dim: false } : { dim: true };
+  if (overlay === "env") return { ov: scaleColor(a.env[i]), dim: false };
+  if (overlay === "land") return { ov: landColor(a.landValue[i]), dim: false };
+  if (overlay === "happiness") return b?.type === "residential" ? { ov: scaleColor(a.happiness[i], 0.65), dim: false } : { dim: true };
+  if (covKind) {
+    const v = a.coverage[covKind][i];
+    return v > 0 ? { ov: `rgba(37,99,235,${0.15 + v * 0.4})`, dim: false } : NO_OVERLAY;
+  }
+  return NO_OVERLAY;
+}
+
+/** 建物の右上の印（⛔ 道路なし・⚠️ つながっていない・🚫 電車が来ない） */
+function tileBadge(state: GameState, a: CityAnalysis, i: number): "noRoad" | "disconnected" | "noLine" | undefined {
+  const b = state.tiles[i].building;
+  if (!b || isRoad(b.type)) return undefined;
+  const cat = BUILDINGS[b.type].category;
+  if (cat === "special" || cat === "rail") return undefined;
+  if (!a.net.roadAccess[i]) return "noRoad";
+  if (!a.net.connected[i]) return "disconnected";
+  if (isStationType(b.type) && !stationWorking(a.rail, i)) return "noLine";
+  return undefined;
+}
+
+/**
+ * 四角の範囲のマス（a と b を対角にした四角）。開発できないマスと、道路に面していない空き地は除く
+ * （住宅・お店・工場は道路に面していないと建たないので、四角の内側は自動で飛ばす）。
+ */
+function rectTiles(state: GameState, a: number, b: number): { tiles: number[]; noRoad: number } {
+  const p = toXY(a, state.width);
+  const q = toXY(b, state.width);
+  const tiles: number[] = [];
+  let noRoad = 0;
+  for (let y = Math.min(p.y, q.y); y <= Math.max(p.y, q.y); y++) {
+    for (let x = Math.min(p.x, q.x); x <= Math.max(p.x, q.x); x++) {
+      const i = y * state.width + x;
+      const t = state.tiles[i];
+      if (!t || !isUnlockedTile(state, i) || t.building || t.terrain === "water") continue;
+      // 1マスだけを選んだときは、道路がなくても置く（あとで道路を引く人もいる）
+      if (a !== b && !neighbors4(i, state.width, state.height).some((j) => isRoad(state.tiles[j].building?.type))) {
+        noRoad++;
+        continue;
+      }
+      tiles.push(i);
+    }
+  }
+  return { tiles, noRoad };
+}
+
 /**
  * なぞった下書きを、実際に建てた場合の結果として計算する（状態は変えない）。
  * 確定時の applyToolAt と同じルール：すでに建物があるマスは飛ばす、ドラッグでは公共施設を壊さない など。
@@ -944,6 +1103,27 @@ function MapLegend({ overlay, hasRange }: { overlay: Overlay; hasRange: boolean 
 function simulateStroke(state: GameState, tool: Tool, tiles: number[]) {
   const ok = new Set<number>();
   const bad = new Set<number>();
+  if (tool !== "inspect" && tool !== "bulldoze" && tool !== "reclaim" && isZone(tool)) {
+    // 住宅・商業・工業は1マスずつ独立なので、状態を複製せずに費用だけ数える（大きな四角でも軽い）
+    let money = state.money;
+    let skipped = 0;
+    let reason: string | undefined;
+    for (const i of tiles) {
+      if (state.tiles[i]?.building) {
+        skipped++;
+        continue;
+      }
+      const c = checkPlacement(money === state.money ? state : { ...state, money }, tool, i);
+      if (c.ok) {
+        ok.add(i);
+        money -= c.cost;
+      } else {
+        bad.add(i);
+        reason ??= c.reason;
+      }
+    }
+    return { ok, bad, skipped, crossings: 0, bridges: 0, unlinked: false, cost: state.money - money, reason, label: `${BUILDINGS[tool].emoji[1]} ${BUILDINGS[tool].name}`, emoji: buildingEmoji(tool, 1) };
+  }
   let skipped = 0;
   let crossings = 0;
   let bridges = 0;
@@ -956,7 +1136,7 @@ function simulateStroke(state: GameState, tool: Tool, tiles: number[]) {
     let r;
     if (tool === "bulldoze") {
       const b = t.building;
-      if (!b || (painting && !dragDemolishable(b.type))) {
+      if ((!b && (painting || !t.subway)) || (b && painting && !dragDemolishable(b.type))) {
         skipped++;
         return;
       }
@@ -991,9 +1171,9 @@ function simulateStroke(state: GameState, tool: Tool, tiles: number[]) {
   const emoji = tool === "bulldoze" ? "🚜" : tool === "reclaim" ? "🟩" : tool === "inspect" ? "" : buildingEmoji(tool, 1);
   // 線路：まだ駅につながっていない（電車が走らない）なら知らせる
   let unlinked = false;
-  if (tool === "rail" && ok.size > 0) {
+  if ((tool === "rail" || tool === "subway") && ok.size > 0) {
     const net = computeRailNetwork(cur);
-    unlinked = [...ok].some((i) => net.lines[net.lineOf[i]]?.stations.length === 0);
+    unlinked = [...ok].some((i) => { const l = net.lines[net.lineOf[i]]; return !!l && !hasStation(l); });
   }
   return { ok, bad, skipped, crossings, bridges, unlinked, cost: state.money - cur.money, reason, label, emoji };
 }
@@ -1034,5 +1214,5 @@ function railTilesFor(state: { tiles: Array<{ building: { type: string } | null 
 type TouchGesture =
   | { kind: "none" }
   | { kind: "tap"; x: number; y: number; tile: number; wy: number; sy: number }
-  | { kind: "draw"; last: number; id: number }
+  | { kind: "draw"; last: number; id: number; start: number; moved?: boolean }
   | { kind: "pan"; x: number; y: number; sl: number; st: number; wy: number; d0: number; s0: number; ox: number; oy: number; k: number; mx: number; my: number };

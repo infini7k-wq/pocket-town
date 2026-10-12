@@ -33,6 +33,14 @@ import {
   busStopBoost,
   busStyle,
   lineStyle,
+  hasStation,
+  landTaxFactor,
+  landValueContext,
+  landValueFactors,
+  landValueLevel,
+  isPassengerStation,
+  isStationType,
+  stationRange,
   rankIndex,
   type CityAnalysis,
   type GameState,
@@ -57,13 +65,44 @@ const ZONES: BuildingType[] = ["residential", "commercial", "industrial"];
 const TRAFFIC_COLOR = ["", "text-emerald-600", "text-amber-600", "text-rose-600"];
 const TERRAIN_TEXT = { grass: "草地", forest: "森（建設時に伐採費 ¥10,000）", water: "水辺（建設不可）" };
 
+/** 地価（★と税収の倍率、上げている・下げている理由の上位） */
+function LandRow({ state, a, i }: { state: GameState; a: CityAnalysis; i: number }) {
+  const v = a.landValue[i];
+  // 地価が効くのは住宅税と商業税だけ（工場の税は変わらない）
+  const taxed = state.tiles[i].building?.type !== "industrial";
+  const lv = landValueLevel(v);
+  const f = landTaxFactor(v);
+  const reasons = landValueFactors(state, i, landValueContext(a))
+    .sort((p, q) => Math.abs(q.value) - Math.abs(p.value))
+    .slice(0, 4);
+  return (
+    <div className="py-1">
+      <Row label="地価">
+        <span className="text-violet-600">{"★".repeat(lv.stars)}</span>
+        <span className="text-slate-300">{"★".repeat(4 - lv.stars)}</span> {lv.label}（{v}）
+        {taxed ? <span className={cx("ml-1", f >= 1 ? "text-emerald-600" : "text-rose-600")}>税収×{f.toFixed(2)}</span> : <span className="ml-1 text-slate-400">工場の税には影響なし</span>}
+      </Row>
+      {reasons.length > 0 && (
+        <div className="flex flex-wrap justify-end gap-1">
+          {reasons.map((r) => (
+            <span key={r.label} className={cx("rounded-full px-1.5 py-0.5 text-[10px] font-bold", r.value > 0 ? "bg-violet-50 text-violet-700" : "bg-rose-50 text-rose-700")}>
+              {r.label} {r.value > 0 ? "+" : ""}
+              {Math.round(r.value)}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** 線路・駅の路線の状態（路線名・電車が走るか・つながっている先） */
 function LineRows({ state, a, i }: { state: GameState; a: CityAnalysis; i: number }) {
   const id = a.rail.lineOf[i];
   const line = a.rail.lines[id];
   if (!line) return null;
   const st = lineStyle(state, a.rail, id);
-  const links = [line.stations.length > 0 && `駅${line.stations.length}`, line.edge && "となり町", line.shinkansen && "新幹線駅"].filter(Boolean).join("・");
+  const links = [line.stations.length > 0 && `駅${line.stations.length}`, line.freight.length > 0 && `貨物駅${line.freight.length}`, line.edge && "となり町", line.shinkansen && "新幹線駅"].filter(Boolean).join("・");
   return (
     <>
       <Row label="路線">
@@ -73,7 +112,7 @@ function LineRows({ state, a, i }: { state: GameState; a: CityAnalysis; i: numbe
       <Row label="電車">{line.working ? <span className="text-emerald-600">✓ 走っている（効き目 {Math.round(line.strength * 100)}%）</span> : <span className="text-amber-600">✗ まだ走っていない</span>}</Row>
       {!line.working && (
         <p className="mt-1 rounded-xl bg-amber-50 p-2 text-[11px] font-bold leading-relaxed text-amber-800">
-          {line.stations.length === 0 ? "🚉 線路の上（道路に面した場所）に鉄道駅を置くと電車が走ります。" : "🛤️ 線路をのばして、ほかの駅か地図の端（となり町）につなぐと電車が走ります。"}
+          {!hasStation(line) ? (line.tiles.some((j) => state.tiles[j].subway) ? "Ⓜ️ トンネルの上の空き地（道路に面した場所）に地下鉄駅を置くと電車が走ります。" : "🚉 線路の上（道路に面した場所）に鉄道駅か貨物駅を置くと電車が走ります。") : line.tiles.every((j) => state.tiles[j].subway) ? "🚇 トンネルをのばして、ほかの地下鉄駅か線路につなぐと電車が走ります。" : "🛤️ 線路をのばして、ほかの駅か地図の端（となり町）につなぐと電車が走ります。"}
         </p>
       )}
     </>
@@ -181,6 +220,7 @@ export function TileInfo({ onClose }: { onClose: () => void }) {
             <Meter label="満足度（見込み）" value={Math.max(0, Math.min(100, h))} />
             <Meter label="環境" value={a.env[i]} />
             {factorList}
+            <LandRow state={state} a={a} i={i} />
           </div>
         )}
       </>
@@ -281,6 +321,7 @@ export function TileInfo({ onClose }: { onClose: () => void }) {
             </>
           )}
           {roadStatus}
+          {!b.abandoned && <LandRow state={state} a={a} i={i} />}
           {isRes && <Meter label="満足度" value={a.happiness[i]} />}
           <Meter label="環境" value={a.env[i]} />
           {isRes && factorList}
@@ -333,29 +374,41 @@ export function TileInfo({ onClose }: { onClose: () => void }) {
     const def = BUILDINGS[b.type];
     let covered = 0;
     // バス停は路線になると範囲が広がる。鉄道駅は電車の効き目の範囲
-    const radius = b.type === "busStop" ? busStopBoost(a.busRoutes, state, i).radius : b.type === "railStation" ? RAIL.radius : (def.coverage?.radius ?? 0);
-    if (def.coverage || b.type === "railStation") {
+    const station = isStationType(b.type);
+    const radius = b.type === "busStop" ? busStopBoost(a.busRoutes, state, i).radius : station ? stationRange(b.type, b.level) : (def.coverage?.radius ?? 0);
+    let factories = 0;
+    if (def.coverage || station) {
       forEachInRange(i, def.size ?? 1, radius, state.width, state.height, (j) => {
         const t = state.tiles[j].building;
         if (t?.type === "residential") covered += t.occupants;
+        if (t?.type === "industrial" && t.level > 0) factories++;
       });
     }
+    const riders = Math.round(a.traffic.stationRiders.get(i) ?? 0);
+    const nextRiders = isPassengerStation(b.type) && b.level < 3 ? RAIL.stationRiders[b.level + 1] : 0;
     const route = a.busRoutes.routeOf.get(i);
     const routeStops = route !== undefined ? a.busRoutes.routes[route].length : 0;
     body = (
       <>
-        {header(b.level === 0 && def.category === "project" ? "🏗️" : def.emoji[1], def.name, `(${x}, ${y})${def.size === 2 ? " ・ 2×2" : ""}`)}
+        {header(b.level === 0 && def.category === "project" ? "🏗️" : buildingEmoji(b.type, Math.max(1, b.level)), levelName(b.type, b.level), `(${x}, ${y})${def.size === 2 ? " ・ 2×2" : ""}`)}
         <p className="mt-2 text-xs font-bold text-slate-600">{def.description}</p>
-        {def.effect && (def.coverage || b.type === "railStation") && (
+        {def.effect && (def.coverage || station) && (
           <p className="mt-2 rounded-xl bg-sky-50 p-2 text-[11px] font-bold leading-relaxed text-sky-800">
             📡 効果範囲（地図の紫の枠・{def.size === 2 ? "建物の端から" : "半径"}{radius}マス。道路や川をはさんでも届く）：{def.effect}
           </p>
         )}
         <div className="mt-1">
           {roadStatus}
-          {(def.coverage || b.type === "railStation") && <Row label="効果範囲">{radius}マス</Row>}
-          {(def.coverage || b.type === "railStation") && <Row label="範囲内の住民">{covered.toLocaleString("ja-JP")}人</Row>}
-          {b.type === "railStation" && <LineRows state={state} a={a} i={i} />}
+          {(def.coverage || station) && <Row label="効果範囲">{radius}マス</Row>}
+          {(def.coverage || station) && b.type !== "freightStation" && <Row label="範囲内の住民">{covered.toLocaleString("ja-JP")}人</Row>}
+          {b.type === "freightStation" && <Row label="範囲内の工場">{factories}棟</Row>}
+          {station && <LineRows state={state} a={a} i={i} />}
+          {isPassengerStation(b.type) && (
+            <Row label="乗客">
+              月{riders.toLocaleString("ja-JP")}人
+              {nextRiders > 0 && <span className="ml-1 text-slate-400">（{levelName(b.type, b.level + 1)}まで {nextRiders.toLocaleString("ja-JP")}人）</span>}
+            </Row>
+          )}
           {route !== undefined && (routeStops >= 2 || b.type === "busStop") && (
             <Row label="バス路線">
               {routeStops >= 2 ? (
@@ -386,6 +439,11 @@ export function TileInfo({ onClose }: { onClose: () => void }) {
   return (
     <div>
       {body}
+      {tile.subway && (
+        <p className="mt-2 rounded-xl bg-slate-100 p-2 text-[11px] font-bold text-slate-600">
+          🚇 地下に地下鉄のトンネルが通っています{a.rail.lines[a.rail.lineOf[i]] ? `（${lineStyle(state, a.rail, a.rail.lineOf[i]).name}）` : ""}。{b ? "" : "撤去ツールでトンネルを埋められます。"}
+        </p>
+      )}
       {rebuildTo.length > 0 && (
         <div className="mt-3 rounded-xl bg-slate-50 p-2">
           <div className="text-[11px] font-bold text-slate-500">🔁 建て替え（撤去せずに種類を変える。造成からやり直し）</div>

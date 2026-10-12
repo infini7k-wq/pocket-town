@@ -20,6 +20,8 @@ export interface TrafficResult {
   congestion: number;
   /** 電車に乗りかえた人（1か月あたり、運賃収入の計算に使う） */
   riders: number;
+  /** 駅ごとの乗客（駅のマス → 人数。駅が育つかの判定に使う） */
+  stationRiders: Map<number, number>;
 }
 
 export function roadCapacity(type: string | undefined): number {
@@ -54,9 +56,11 @@ export function tripSplit(state: GameState, i: number, emp: Employment, coverage
   // 鉄道駅のそば：さらに電車に乗りかえる（バスと重ねても7割減まで）
   const train = RAIL.cut * (rail?.ride[i] ?? 0);
   const remain = Math.max(train > 0 ? RAIL.floor : 0, (1 - bus) * (1 - train));
-  const base = trips * Math.max(0.2, 1 + fx.traffic);
-  // バスだけでも減る分を除いた、電車の乗客
-  return { car: base * remain, riders: train > 0 ? base * Math.max(0, 1 - bus - remain) : 0 };
+  // 貨物駅のそばの工場：トラックが貨物列車に変わる
+  const freight = b.type === "industrial" && rail?.freightArea[i] ? 1 - RAIL.freightCut : 1;
+  const base = trips * freight * Math.max(0.2, 1 + fx.traffic);
+  // 電車の乗客：バスは駅へ人を運ぶので、バスがあっても半分は電車に乗る（車が減る量の上限とは別に数える）
+  return { car: base * remain, riders: base * train * (1 - 0.5 * bus) };
 }
 
 export function computeTraffic(state: GameState, emp: Employment, coverage: CoverageMap, fx: Effects, rail?: RailNetwork): TrafficResult {
@@ -65,6 +69,7 @@ export function computeTraffic(state: GameState, emp: Employment, coverage: Cove
   // 踏切のある道路は、電車待ちで少し流れが悪い
   const cap = tiles.map((t) => roadCapacity(t.building?.type) * (t.building?.rail ? RAIL.crossing : 1));
   let riders = 0;
+  const stationRiders = new Map<number, number>();
   const isRoadAt = (i: number) => cap[i] > 0;
   let load = new Array<number>(n).fill(0);
 
@@ -73,6 +78,8 @@ export function computeTraffic(state: GameState, emp: Employment, coverage: Cove
     if (isRoadAt(i) || !tiles[i].building) continue;
     const split = tripSplit(state, i, emp, coverage, fx, rail);
     riders += split.riders;
+    const st = rail?.rideFrom[i] ?? -1;
+    if (st >= 0 && split.riders > 0) stationRiders.set(st, (stationRiders.get(st) ?? 0) + split.riders);
     const trips = split.car;
     if (trips <= 0) continue;
     // 2×2 の大型施設は4マスの周りの道路すべてに分散する
@@ -106,7 +113,7 @@ export function computeTraffic(state: GameState, emp: Employment, coverage: Cove
     roads++;
     sum += Math.max(0, Math.min(1, (ratio[i] - 0.3) / 0.9));
   }
-  return { load, ratio, level, congestion: roads ? Math.round((sum / roads) * 100) : 0, riders: Math.round(riders) };
+  return { load, ratio, level, congestion: roads ? Math.round((sum / roads) * 100) : 0, riders: Math.round(riders), stationRiders };
 }
 
 /** 隣接する道路の中で最も混んでいる状態 */

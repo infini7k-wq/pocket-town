@@ -13,7 +13,7 @@ import { getPolicy, policyState } from "./policies";
 import { policyFor } from "./advice";
 import { promiseLabel, promiseProgress } from "./politics";
 import { isUnlockedTile, neighbors4 } from "./map";
-import { stationWorking } from "./rail";
+import { isStationType, stationWorking } from "./rail";
 import { getRank, isBuildingUnlocked, mayorTitle, rankIndex } from "./progression";
 import type { Rng } from "./rng";
 import type { BuildingType, GameState, MonthReport, Tone, Voice } from "./types";
@@ -295,7 +295,7 @@ export function voiceCandidates(state: GameState, a: CityAnalysis, report: Month
   }
 
   // 電車が走っていない鉄道駅
-  const idleStation = state.tiles.findIndex((t, i) => t.building?.type === "railStation" && !stationWorking(a.rail, i));
+  const idleStation = state.tiles.findIndex((t, i) => isStationType(t.building?.type) && !stationWorking(a.rail, i));
   if (idleStation >= 0) {
     out.push({ id: "stationIdle", tool: "rail", severity: 40, tone: "bad", persona: "student", text: "駅はできたのに、電車が来ないんだけど…", hint: "線路をのばして、ほかの駅か地図の端（となり町）につなぐと電車が走る", tile: idleStation });
   }
@@ -418,7 +418,7 @@ export function voiceCandidates(state: GameState, a: CityAnalysis, report: Month
   if (hospital !== undefined) out.push({ id: "newHospital", severity: 32, tone: "good", persona: "elder", text: "病院が近くにできて、ひと安心だよ。", tile: hospital });
   const bus = recentlyBuilt(state, "busStop") ?? recentlyBuilt(state, "station");
   if (bus !== undefined) out.push({ id: "newTransit", severity: 28, tone: "good", persona: "student", text: "通学が楽になった！", tile: bus });
-  const train = recentlyBuilt(state, "railStation");
+  const train = recentlyBuilt(state, "railStation") ?? recentlyBuilt(state, "subwayStation");
   if (train !== undefined && stationWorking(a.rail, train)) out.push({ id: "newTrain", severity: 34, tone: "good", persona: "worker", text: "駅ができて電車で通勤できるようになった！", tile: train });
   const up = report?.changes.find((c) => c.kind === "levelUp" && state.tiles[c.tile].building?.type === "residential");
   if (up) {

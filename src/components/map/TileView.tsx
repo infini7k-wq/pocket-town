@@ -21,6 +21,8 @@ export interface TileViewProps {
   badge?: "noRoad" | "disconnected" | "noLine";
   /** 線路のつながり（上=1, 右=2, 下=4, 左=8）。0 以外なら線路を描く（道路なら踏切） */
   railMask?: number;
+  /** 地下鉄のトンネルのつながり（上=1, 右=2, 下=4, 左=8）。地上の建物の下に点線で描く */
+  subwayMask?: number;
   selected: boolean;
   flashKey?: number;
   preview?: "ok" | "bad";
@@ -159,6 +161,23 @@ function Track({ mask, crossing }: { mask: number; crossing: boolean }) {
   );
 }
 
+/** 地下鉄のトンネル（地下なので点線で控えめに描く） */
+function Subway({ mask }: { mask: number }) {
+  const m = mask || 10;
+  const dash = (deg: number) => `repeating-linear-gradient(${deg}deg, rgba(51,65,85,0.75) 0 3px, transparent 3px 6px)`;
+  const w = "12%";
+  const off = "44%";
+  const reach = "56%";
+  return (
+    <>
+      {m & 1 ? <div className="absolute" style={{ left: off, width: w, top: 0, height: reach, backgroundImage: dash(0) }} aria-hidden /> : null}
+      {m & 4 ? <div className="absolute" style={{ left: off, width: w, bottom: 0, height: reach, backgroundImage: dash(0) }} aria-hidden /> : null}
+      {m & 8 ? <div className="absolute" style={{ top: off, height: w, left: 0, width: reach, backgroundImage: dash(90) }} aria-hidden /> : null}
+      {m & 2 ? <div className="absolute" style={{ top: off, height: w, right: 0, width: reach, backgroundImage: dash(90) }} aria-hidden /> : null}
+    </>
+  );
+}
+
 /** 2×2 の大型施設（本体のマスから4マス分にはみ出して描く） */
 /** 線路（地図の端から駅の中心まで） */
 function Rail({ side }: { side: "top" | "right" | "bottom" | "left" }) {
@@ -225,6 +244,7 @@ function TileViewImpl(p: TileViewProps) {
       {p.railMask !== undefined && !road && <Track mask={p.railMask} crossing={false} />}
       {road && <Road mask={p.roadMask} avenue={p.type === "avenue"} traffic={p.traffic} size={s} />}
       {p.railMask !== undefined && road && <Track mask={p.railMask} crossing />}
+      {p.subwayMask !== undefined && <Subway mask={p.subwayMask} />}
       {p.type && p.bigSize === 2 && <BigSprite type={p.type} level={p.level} buildLeft={p.buildLeft} size={s} railSide={p.railSide} />}
       {p.type && !road && !p.bigSize && p.type !== "annex" && p.type !== "rail" && <Sprite type={p.type} level={p.level} abandoned={p.abandoned} size={s} />}
       {p.soon && (

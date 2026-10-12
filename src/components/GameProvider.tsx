@@ -13,6 +13,8 @@ import {
   reclaim,
   dragDemolishable,
   isUpgradeTarget,
+  isZone,
+  placeZones,
   borrow,
   claimMissions,
   clearSave,
@@ -51,7 +53,7 @@ import {
 } from "@/game";
 
 export type Tool = BuildingType | "inspect" | "bulldoze" | "reclaim";
-export type Overlay = "none" | "traffic" | "lines" | "env" | "happiness" | "park" | "education" | "health" | "fire" | "transit" | "shopping" | "plaza";
+export type Overlay = "none" | "traffic" | "lines" | "land" | "env" | "happiness" | "park" | "education" | "health" | "fire" | "transit" | "shopping" | "plaza";
 export type PanelTab = "voices" | "city" | "policy" | "finance" | "goals";
 
 /** 今表示するダイアログ（1つだけ。ここで決めるので、表示されないダイアログが進行を止めることはない） */
@@ -103,6 +105,8 @@ interface GameContextValue {
   showOverlay: (o: Overlay) => void;
   /** マスに対して現在のツールを使う（painting = ドラッグ中の連続設置） */
   applyToolAt: (i: number, painting?: boolean) => void;
+  /** 住宅・商業・工業をまとめて置く（四角でまとめて区画・下書きの確定）。1回の取り消しで戻せる */
+  applyZonesAt: (tiles: number[]) => void;
   endStroke: () => void;
   /** 任意のアクションを実行する（失敗時はトーストでエラー表示） */
   runAction: (fn: (s: GameState) => ActionResult) => boolean;
@@ -248,7 +252,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     setOverlay((o) => {
       if (cov && cov !== "landmark") return cov as Overlay;
       // 線路・鉄道駅を選んだら路線図を表示
-      if (t === "rail" || t === "railStation") return "lines";
+      if (t === "rail" || t === "railStation" || t === "freightStation" || t === "subway" || t === "subwayStation") return "lines";
       return RANGE_OVERLAYS.includes(o) || o === "lines" ? "none" : o;
     });
   }, []);
@@ -322,8 +326,9 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       }
       if (tool === "bulldoze") {
         const b = cur.tiles[i]?.building;
-        if (!b) return;
-        if (painting && !dragDemolishable(b.type)) return; // 公共施設・大型施設はドラッグでは壊さない
+        // 地下鉄のトンネルだけのマスは、なぞって撤去しない（1マスずつタップで埋める）
+        if (!b && (painting || !cur.tiles[i]?.subway)) return;
+        if (painting && b && !dragDemolishable(b.type)) return; // 公共施設・大型施設はドラッグでは壊さない
         const before = cur.money;
         const next = apply((s) => demolish(s, i), { silent: painting && strokeError.current, stroke: true });
         if (!next) {
@@ -358,6 +363,22 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       addFloaters([{ tile: i, text: `-${formatYen(before - next.money)}`, tone: "bad" }]);
     },
     [tool, apply, addFloaters, selected],
+  );
+
+  const applyZonesAt = useCallback(
+    (tiles: number[]) => {
+      const cur = stateRef.current;
+      if (!cur || tool === "inspect" || tool === "bulldoze" || tool === "reclaim" || !isZone(tool) || tiles.length === 0) return;
+      let placed: number[] = [];
+      const next = apply((s) => {
+        const r = placeZones(s, tool, tiles);
+        placed = r.placed ?? [];
+        return r;
+      });
+      if (!next || placed.length === 0) return;
+      addFloaters([{ tile: placed[0], text: `-${formatYen(cur.money - next.money)}`, tone: "bad" }]);
+    },
+    [tool, apply, addFloaters],
   );
 
   const endStroke = useCallback(() => {
@@ -639,6 +660,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       openPanel,
       showOverlay,
       applyToolAt,
+      applyZonesAt,
       endStroke,
       runAction,
       advance,
@@ -672,7 +694,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       policyFocus,
       setHelpOpen,
     }),
-    [state, analysis, tool, setTool, pickTool, selected, flash, focusTile, overlay, panelTab, openPanel, showOverlay, applyToolAt, endStroke, runAction, advance, advanceMany, undo, undoStack.length, changeTax, takeLoan, repayLoan, chooseEventOption, newGame, slot, recordToHall, scenarioResult, continueGame, quitToTitle, floaters, toasts, toast, banner, rankUp, eraShift, helpOpen, dialog, electionResult, openPolicy, policyFocus],
+    [state, analysis, tool, setTool, pickTool, selected, flash, focusTile, overlay, panelTab, openPanel, showOverlay, applyToolAt, applyZonesAt, endStroke, runAction, advance, advanceMany, undo, undoStack.length, changeTax, takeLoan, repayLoan, chooseEventOption, newGame, slot, recordToHall, scenarioResult, continueGame, quitToTitle, floaters, toasts, toast, banner, rankUp, eraShift, helpOpen, dialog, electionResult, openPolicy, policyFocus],
   );
 
   return <GameContext.Provider value={value}>{children}</GameContext.Provider>;

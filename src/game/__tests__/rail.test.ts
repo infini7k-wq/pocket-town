@@ -12,7 +12,7 @@ import { blankState, idx, put, roadCol, roadRow, unwrap } from "./helpers";
 function railTown() {
   const s = { ...blankState(), rank: "city" as const };
   roadRow(s, 4, 0, 15);
-  roadCol(s, 7, 4, 7);
+  roadCol(s, 7, 4, 6);
   for (let x = 0; x < 16; x++) put(s, x, 3, "rail");
   return s;
 }

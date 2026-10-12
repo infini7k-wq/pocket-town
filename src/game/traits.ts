@@ -149,7 +149,7 @@ export function demandLabel(v: number): string {
 
 export function profileSummary(p: TownProfile): Array<{ label: string; value: string }> {
   return [
-    { label: "地価", value: landValueLabel(p.landValue) },
+    { label: "建設費（町の土地代）", value: landValueLabel(p.landValue) },
     { label: "お店の出やすさ", value: demandLabel(p.comDemand) },
     { label: "工場の注文", value: demandLabel(p.indDemand) },
     { label: "住民", value: `${TENDENCIES[p.tendency].emoji} ${TENDENCIES[p.tendency].name}` },

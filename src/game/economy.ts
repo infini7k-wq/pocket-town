@@ -2,6 +2,7 @@
 
 import { policyState, totalPolicyUpkeep } from "./policies";
 import { RAIL } from "./rail";
+import { landTaxFactor } from "./landvalue";
 import { BUILDINGS, isRoad } from "./buildings";
 import { ECONOMY, TRAFFIC } from "./config";
 import type { Employment } from "./employment";
@@ -19,6 +20,8 @@ export interface BudgetContext {
   fx: Effects;
   /** 電車の乗客（1か月あたり） */
   riders?: number;
+  /** 場所ごとの地価（住宅税・商業税の倍率に使う） */
+  landValue?: number[];
 }
 
 /** 住民1人あたりの住宅税（月額） */
@@ -45,8 +48,13 @@ export function computeBudget(state: GameState, ctx: BudgetContext): BudgetBreak
   let roads = 0;
   let services = 0;
   let facilities = 0;
+  // 住民の住む場所の地価の平均（住民数で重み付け）
+  let resPeople = 0;
+  let resLand = 0;
 
   state.tiles.forEach((t, i) => {
+    // 地下鉄のトンネルの維持費（地上の建物とは別）
+    if (t.subway) roads += BUILDINGS.subway.upkeep;
     const b = t.building;
     if (!b) return;
     const def = BUILDINGS[b.type];
@@ -55,8 +63,13 @@ export function computeBudget(state: GameState, ctx: BudgetContext): BudgetBreak
     if (isRoad(b.type) || b.type === "rail") roads += def.upkeep + (b.rail ? BUILDINGS.rail.upkeep : 0);
     else if (!building) services += def.upkeep;
     if (def.revenue && b.level > 0 && ctx.connected[i]) facilities += def.revenue;
+    const land = ctx.landValue ? landTaxFactor(ctx.landValue[i]) : 1;
+    if (b.type === "residential" && b.occupants > 0) {
+      resPeople += b.occupants;
+      resLand += b.occupants * land;
+    }
     if (b.type === "commercial") {
-      commercial += emp.workersAt[i] * ECONOMY.comTaxUnit * state.taxes.commercial * congestionEfficiency(state, i, ctx.trafficLevel);
+      commercial += emp.workersAt[i] * ECONOMY.comTaxUnit * state.taxes.commercial * congestionEfficiency(state, i, ctx.trafficLevel) * land;
     } else if (b.type === "industrial") {
       industrial += emp.workersAt[i] * ECONOMY.indTaxUnit * state.taxes.industrial * congestionEfficiency(state, i, ctx.trafficLevel);
     }
@@ -66,7 +79,7 @@ export function computeBudget(state: GameState, ctx: BudgetContext): BudgetBreak
   // 誘致した大型店などの追加雇用
   commercial += ctx.fx.extraComJobs * emp.comEfficiency * emp.jobFillRate * ECONOMY.comTaxUnit * state.taxes.commercial;
 
-  const residential = emp.population * residentialTaxPerCapita(state.taxes.residential, emp.employmentRate);
+  const residential = emp.population * residentialTaxPerCapita(state.taxes.residential, emp.employmentRate) * (resPeople > 0 ? resLand / resPeople : 1);
   const income = {
     residential: round100(residential * taxMult),
     commercial: round100(commercial * taxMult),

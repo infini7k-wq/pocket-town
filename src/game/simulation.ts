@@ -8,7 +8,8 @@
 //   → 大型施設の工事・時代の転換・陳情の判定・ランクアップ・目標・財政破綻、住民の声の更新
 
 import { analyzeCity } from "./analysis";
-import { BUILDINGS } from "./buildings";
+import { BUILDINGS, buildingEmoji, isPassengerStation, levelName } from "./buildings";
+import { RAIL } from "./rail";
 import { advanceEra } from "./eras";
 import { processRequests } from "./requests";
 import { evaluateScenario } from "./scenarios";
@@ -64,6 +65,27 @@ export function advanceMonth(state: GameState, options: { forceEvent?: string } 
     const def = BUILDINGS[b.type];
     growth.changes.push({ tile: i, kind: "built", level: 1 });
     const item: NewsItem = { turn: draft.turn, emoji: def.emoji[1], title: `${def.name}が完成！`, body: def.impact ?? def.description, tone: "good", tile: i };
+    draft.news = [item, ...draft.news].slice(0, NEWS_LIMIT);
+    events.push(item);
+  });
+
+  // 乗客の多い駅は、大きな駅 → 駅ビルに育つ（1か月に1段ずつ）
+  draft.tiles.forEach((t, i) => {
+    const b = t.building;
+    if (!b || !isPassengerStation(b.type) || b.level < 1 || b.level >= 3) return;
+    const riders = a1.traffic.stationRiders.get(i) ?? 0;
+    if (riders < RAIL.stationRiders[b.level + 1]) return;
+    b.level += 1;
+    growth.changes.push({ tile: i, kind: "levelUp", level: b.level });
+    const name = levelName(b.type, b.level);
+    const item: NewsItem = {
+      turn: draft.turn,
+      emoji: buildingEmoji(b.type, b.level),
+      title: b.level === 3 ? `駅が「${name}」に生まれ変わった！` : `駅が「${name}」になった！`,
+      body: b.level === 3 ? "乗客が増えて、お店の入った駅ビルが完成。駅前のお客と、駅の効き目の範囲（5マス）が広がりました。" : "乗客が増えて駅が大きくなりました。電車の効き目と駅前のお客が増えます。",
+      tone: "good",
+      tile: i,
+    };
     draft.news = [item, ...draft.news].slice(0, NEWS_LIMIT);
     events.push(item);
   });
