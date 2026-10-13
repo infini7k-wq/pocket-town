@@ -20,7 +20,7 @@ export interface HappinessContext {
   congestion: number;
   employment: Employment;
   fx: Effects;
-  /** 鉄道駅の効き目（マスごと、0〜1） */
+  /** 駅の効き目（マスごと、0〜1） */
   ride?: Float32Array;
 }
 

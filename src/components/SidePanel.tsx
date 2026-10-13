@@ -704,7 +704,7 @@ function TransitCard() {
       )}
       {lonely > 0 && <p className="mt-1 text-[11px] font-bold text-slate-500">🚏 路線になっていないバス停が{lonely}つ（道のり8マス以内にほかの停留所を置くと、よく効くようになります）</p>}
       {rankIndex(state.rank) >= rankIndex("city") && lines.every(({ l }) => !l.working) && (
-        <p className="mt-1 text-[11px] font-bold text-slate-500">💡 線路をなぞって敷き、道路に面した線路の上に鉄道駅を置こう。駅どうしか地図の端（となり町）につながると電車が走り、駅のまわりの車が大きく減ります。</p>
+        <p className="mt-1 text-[11px] font-bold text-slate-500">💡 線路をなぞって引き（道路や家の上でもOK）、線路の上の道路に面した空き地か家の場所に駅を置こう。駅どうしか地図の端（となり町）につながると電車が走り、駅のまわりの車が大きく減ります。</p>
       )}
     </Card>
   );

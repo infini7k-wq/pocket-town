@@ -15,7 +15,6 @@ import {
   dragDemolishable,
   isTrackTile,
   isTrackStation,
-  hasGroundTrack,
   isStationType,
   hasStation,
   lineStyle,
@@ -74,7 +73,7 @@ const RANGE_RADIUS: Record<string, string> = {
   education: "学校4マス・大学8マス（2×2は建物の端から）",
   health: "病院5マス",
   fire: "消防署5マス",
-  transit: "バス停3マス（路線でターミナル・駅に直通なら4マス）・バスターミナル5マス・新幹線駅7マス（鉄道駅4マスは「路線」で表示）",
+  transit: "バス停3マス（路線でターミナル・駅に直通なら4マス）・バスターミナル5マス・新幹線駅7マス（駅4マスは「路線」で表示）",
   shopping: "コンビニ・スーパー3マス・デパート4マス・複合ビル5マス・ランドマークビル6マス・アーケード商店街5マス",
   plaza: "広場3マス",
 };
@@ -298,24 +297,20 @@ export function CityMap() {
       return { ok: c.ok, emoji: "🟩", text: c.ok ? `埋め立て ¥${c.cost.toLocaleString("ja-JP")}` : c.reason };
     }
     if (tool === "bulldoze") {
-      if (!state.tiles[hover]?.building && !state.tiles[hover]?.subway && !state.tiles[hover]?.elevated) return null;
+      if (!state.tiles[hover]?.building && !state.tiles[hover]?.track) return null;
       const c = checkDemolish(state, hover);
       return { ok: c.ok, emoji: "🚜", text: c.ok ? (c.refund > 0 ? `撤去 +¥${c.refund.toLocaleString("ja-JP")}` : "撤去") : c.reason };
     }
     // 建てた直後や、すでに建物があるマスではエラーを出さない（大通りへの置き換えだけは案内する）
     const existing = state.tiles[hover]?.building;
-    if (tool === "elevated" && state.tiles[hover]?.elevated) return null;
-    if (existing && !isUpgradeTarget(tool, existing) && !(isTrackStation(tool) && (existing.type === "rail" || state.tiles[hover]?.elevated))) return null;
-    if ((isRoad(tool) || tool === "rail") && existing && isUpgradeTarget(tool, existing) && (tool === "rail" || existing.type === "rail")) {
+    if (tool === "rail" && state.tiles[hover]?.track) return null;
+    if (existing && !isUpgradeTarget(tool, existing) && !(isTrackStation(tool) && state.tiles[hover]?.track)) return null;
+    if (isRoad(tool) && state.tiles[hover]?.terrain === "water") {
       const c = checkPlacement(state, tool, hover);
-      return { ok: c.ok, emoji: "🚧", text: c.ok ? `踏切 ¥${c.cost.toLocaleString("ja-JP")}` : c.reason };
-    }
-    if ((isRoad(tool) || tool === "rail") && state.tiles[hover]?.terrain === "water") {
-      const c = checkPlacement(state, tool, hover);
-      return { ok: c.ok, emoji: "🌉", text: c.ok ? `${tool === "rail" ? "鉄橋" : "橋"} ¥${c.cost.toLocaleString("ja-JP")}` : c.reason };
+      return { ok: c.ok, emoji: "🌉", text: c.ok ? `橋 ¥${c.cost.toLocaleString("ja-JP")}` : c.reason };
     }
     const c = checkPlacement(state, tool, hover);
-    // 高架の駅で家などを建て替えるときは、そのことを見せる
+    // 駅で家などを建て替えるときは、そのことを見せる
     const replace = c.ok && isTrackStation(tool) && existing && isZone(existing.type) ? `${buildingEmoji(existing.type, existing.level)}→${buildingEmoji(tool, 1)} 建て替え ` : "";
     return { ok: c.ok, emoji: buildingEmoji(tool, 1), text: c.ok ? `${replace}¥${c.cost.toLocaleString("ja-JP")}` : c.reason };
   }, [hover, tool, state]);
@@ -679,12 +674,8 @@ export function CityMap() {
       const b = t.building;
       const road = isRoad(b?.type);
       const roadMask = road ? neighborMask(state, i, (j) => isRoad(state.tiles[j].building?.type)) : 0;
-      const track = isTrackTile(state, i) && (b?.type === "rail" || isTrackStation(b?.type) || !!b?.rail);
-      // 地図の端の線路は、となり町へ続くように外へ延ばして描く
-      const railMask = track ? neighborMask(state, i, (j) => isTrackTile(state, j), true) : undefined;
-      const subwayMask = t.subway ? neighborMask(state, i, (j) => isTrackTile(state, j)) : undefined;
-      // 地図の端の高架も、となり町へ続くように外へ延ばして描く（高架の駅のマスは駅の絵だけ）
-      const elevatedMask = t.elevated && !isTrackStation(b?.type) ? neighborMask(state, i, (j) => isTrackTile(state, j), true) : undefined;
+      // 線路は建物の上に重ねて描く。地図の端の線路は、となり町へ続くように外へ延ばす（駅のマスは駅の絵だけ）
+      const railMask = t.track && !isTrackStation(b?.type) ? neighborMask(state, i, (j) => isTrackTile(state, j), true) : undefined;
       const locked = !isUnlockedTile(state, i);
       const { ov, dim } = locked ? NO_OVERLAY : tileOverlay(state, analysis, i, overlay, covKind, busTiles);
       const badge = tileBadge(state, analysis, i);
@@ -700,8 +691,6 @@ export function CityMap() {
           abandoned={b?.abandoned ?? false}
           roadMask={roadMask}
           railMask={railMask}
-          subwayMask={subwayMask}
-          elevatedMask={elevatedMask}
           traffic={road ? analysis.traffic.level[i] : 0}
           locked={locked}
           overlay={ov}
@@ -867,16 +856,14 @@ export function CityMap() {
               {draftSim.label} {draftSim.ok.size}マス
               {draftSim.bad.size > 0 && <span className="ml-1 text-rose-300">（{draftSim.bad.size}マスは不可）</span>}
               {draft?.noRoad ? <span className="ml-1 text-slate-400">（道路に面していない{draft.noRoad}マスは飛ばします）</span> : null}
-              {draftSim.skipped > 0 && <span className="ml-1 text-slate-400">（{draftSim.skipped}マスは{tool === "bulldoze" ? "ドラッグでは撤去しないので" : tool === "reclaim" ? "水辺ではないので" : "すでに建物があるので"}飛ばします）</span>}
+              {draftSim.skipped > 0 && <span className="ml-1 text-slate-400">（{draftSim.skipped}マスは{tool === "bulldoze" ? "ドラッグでは撤去しないので" : tool === "reclaim" ? "水辺ではないので" : tool === "rail" ? "すでに線路があるので" : "すでに建物があるので"}飛ばします）</span>}
             </div>
             <div className="tabular text-[11px] font-bold text-slate-300">
               {draftSim.cost >= 0 ? `費用 ${formatYen(draftSim.cost)}` : `返金 +${formatYen(-draftSim.cost)}`}
-              {draftSim.crossings > 0 && <span className="ml-1">🚧 踏切{draftSim.crossings}</span>}
-              {draftSim.bridges > 0 && <span className="ml-1">🌉 {tool === "rail" ? "鉄橋" : "橋"}{draftSim.bridges}</span>}
+              {draftSim.bridges > 0 && <span className="ml-1">🌉 {tool === "rail" ? "川の上" : "橋"}{draftSim.bridges}</span>}
               {draftSim.reason && <span className="ml-1 text-rose-300">{draftSim.reason}</span>}
             </div>
-            {draftSim.unlinked && <div className="text-[11px] font-bold text-amber-300">⚠️ まだ駅につながっていません（{tool === "subway" ? "トンネルの上の空き地に地下鉄駅を置く" : tool === "elevated" ? "高架の下の、道路に面した空き地か住宅・お店・工場の場所に鉄道駅を置く" : "線路の上に鉄道駅を置く"}と電車が走ります）</div>}
-            {tool === "rail" && draftSim.buildingSkips > 0 && <div className="text-[11px] font-bold text-sky-300">💡 建物のある所は飛ばします。家や道路を壊さずに通すなら「高架線路」が便利です</div>}
+            {draftSim.unlinked && <div className="text-[11px] font-bold text-amber-300">⚠️ まだ駅につながっていません（線路の上の、道路に面した空き地か家の場所に駅を置くと電車が走ります）</div>}
           </div>
           <button type="button" onClick={() => setDraft(null)} className="rounded-full bg-white/15 px-3 py-2 text-xs font-black">
             ✕ やめる
@@ -1130,12 +1117,10 @@ function simulateStroke(state: GameState, tool: Tool, tiles: number[]) {
         reason ??= c.reason;
       }
     }
-    return { ok, bad, skipped, crossings: 0, bridges: 0, buildingSkips: 0, unlinked: false, cost: state.money - money, reason, label: `${BUILDINGS[tool].emoji[1]} ${BUILDINGS[tool].name}`, emoji: buildingEmoji(tool, 1) };
+    return { ok, bad, skipped, bridges: 0, unlinked: false, cost: state.money - money, reason, label: `${BUILDINGS[tool].emoji[1]} ${BUILDINGS[tool].name}`, emoji: buildingEmoji(tool, 1) };
   }
   let skipped = 0;
-  let crossings = 0;
   let bridges = 0;
-  let buildingSkips = 0;
   let cur = state;
   let reason: string | undefined;
   tiles.forEach((i, k) => {
@@ -1145,7 +1130,7 @@ function simulateStroke(state: GameState, tool: Tool, tiles: number[]) {
     let r;
     if (tool === "bulldoze") {
       const b = t.building;
-      if ((!b && (painting || !(t.subway || t.elevated))) || (b && painting && !dragDemolishable(b.type))) {
+      if ((!b && (painting || !t.track)) || (b && painting && !dragDemolishable(b.type))) {
         skipped++;
         return;
       }
@@ -1158,19 +1143,15 @@ function simulateStroke(state: GameState, tool: Tool, tiles: number[]) {
       r = reclaim(cur, i);
     } else if (tool !== "inspect") {
       const existing = t.building;
-      if (tool === "elevated" && t.elevated) {
+      if (tool === "rail" && t.track) {
         skipped++;
         return;
       }
       if (existing && !isUpgradeTarget(tool, existing)) {
         skipped++;
-        if (tool === "rail" && !isRoad(existing.type) && !hasGroundTrack(existing)) buildingSkips++;
         return;
       }
-      if (tool === "rail" || isRoad(tool)) {
-        if (existing && (tool === "rail" ? isRoad(existing.type) : existing.type === "rail")) crossings++;
-        else if (t.terrain === "water") bridges++;
-      }
+      if ((tool === "rail" || isRoad(tool)) && t.terrain === "water") bridges++;
       r = placeBuilding(cur, tool, i);
     } else return;
     if (r.ok) {
@@ -1185,11 +1166,11 @@ function simulateStroke(state: GameState, tool: Tool, tiles: number[]) {
   const emoji = tool === "bulldoze" ? "🚜" : tool === "reclaim" ? "🟩" : tool === "inspect" ? "" : buildingEmoji(tool, 1);
   // 線路：まだ駅につながっていない（電車が走らない）なら知らせる
   let unlinked = false;
-  if ((tool === "rail" || tool === "subway" || tool === "elevated") && ok.size > 0) {
+  if (tool === "rail" && ok.size > 0) {
     const net = computeRailNetwork(cur);
     unlinked = [...ok].some((i) => { const l = net.lines[net.lineOf[i]]; return !!l && !hasStation(l); });
   }
-  return { ok, bad, skipped, crossings, bridges, buildingSkips, unlinked, cost: state.money - cur.money, reason, label, emoji };
+  return { ok, bad, skipped, bridges, unlinked, cost: state.money - cur.money, reason, label, emoji };
 }
 
 type Side = "top" | "right" | "bottom" | "left";

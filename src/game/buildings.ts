@@ -267,11 +267,11 @@ export const BUILDINGS: Record<BuildingType, BuildingDef> = {
   rail: {
     type: "rail",
     name: "線路",
-    description: "なぞって敷く。駅どうし・地図の端とつなぐと電車が走る",
+    description: "なぞって引く。空き地・道路・家・川の上のどこでも引けて、下にあるものは壊さない。駅どうしか地図の端（となり町）とつなぐと電車が走る",
     category: "rail",
     emoji: ["", "🛤️"],
-    cost: 60_000,
-    upkeep: 2_500,
+    cost: 100_000,
+    upkeep: 3_000,
     jobs: [0, 0],
     unlockRank: "city",
     removable: true,
@@ -280,14 +280,14 @@ export const BUILDINGS: Record<BuildingType, BuildingDef> = {
   },
   railStation: {
     type: "railStation",
-    name: "鉄道駅",
-    description: "線路か高架線路の上に、道路に面して置く（高架の下の家は駅に建て替わる）。ほかの駅か地図の端につながると、周りの車が大きく減る",
+    name: "駅",
+    description: "線路の上の、道路に面した空き地か家・お店・工場の場所に置く（建物は駅に建て替わる）。ほかの駅か地図の端につながると、周りの車が大きく減る",
     category: "service",
     emoji: ["", "🚉", "🚉", "🏬"],
     cost: 1_500_000,
     upkeep: 80_000,
     jobs: [0, 6, 20, 60],
-    levelNames: ["", "鉄道駅", "大きな駅", "駅ビル"],
+    levelNames: ["", "駅", "大きな駅", "駅ビル"],
     effect: "建物から4マス以内の車を最大6割減らす（路線につながる駅が多いほど効く）。満足度も上がり、タワーマンションなどに育つ条件にもなる。乗客が増えると大きな駅・駅ビルに育つ",
     unlockRank: "city",
     removable: true,
@@ -295,55 +295,10 @@ export const BUILDINGS: Record<BuildingType, BuildingDef> = {
     color: "#7e57c2",
     trips: 12,
   },
-  elevated: {
-    type: "elevated",
-    name: "高架線路",
-    description: "なぞって、道路や建物の上に線路を架ける。下の家や道路は壊さない。線路・駅とつながると電車が走る",
-    category: "rail",
-    emoji: ["", "🌉"],
-    cost: 150_000,
-    upkeep: 5_000,
-    jobs: [0, 0],
-    unlockRank: "city",
-    removable: true,
-    paintable: true,
-    color: "#64748b",
-  },
-  subway: {
-    type: "subway",
-    name: "地下鉄",
-    description: "なぞって地下にトンネルを掘る。建物や道路の下も通せる。地下鉄駅・線路とつながると電車が走る",
-    category: "rail",
-    emoji: ["", "🚇"],
-    cost: 250_000,
-    upkeep: 6_000,
-    jobs: [0, 0],
-    unlockRank: "metropolis",
-    removable: true,
-    paintable: true,
-    color: "#475569",
-  },
-  subwayStation: {
-    type: "subwayStation",
-    name: "地下鉄駅",
-    description: "地下鉄のトンネルの上の空き地に、道路に面して置く。効き目は鉄道駅と同じ",
-    category: "service",
-    emoji: ["", "Ⓜ️", "Ⓜ️", "🏬"],
-    cost: 2_500_000,
-    upkeep: 120_000,
-    jobs: [0, 6, 20, 60],
-    levelNames: ["", "地下鉄駅", "大きな地下鉄駅", "駅ビル"],
-    effect: "建物から4マス以内の車を最大6割減らす（鉄道駅と同じ）。地上は1マスで済むので、混み合った街の真ん中に置ける",
-    unlockRank: "metropolis",
-    removable: true,
-    paintable: false,
-    color: "#475569",
-    trips: 12,
-  },
   freightStation: {
     type: "freightStation",
     name: "貨物駅",
-    description: "線路の上に、道路に面して置く。電車が走る路線にあると、近くの工場のトラックが貨物列車に変わる",
+    description: "駅と同じく、線路の上の道路に面した場所に置く。電車が走る路線にあると、近くの工場のトラックが貨物列車に変わる",
     category: "service",
     emoji: ["", "🚛"],
     cost: 1_200_000,
@@ -639,11 +594,8 @@ export const BUILD_ORDER: BuildingType[] = [
   "station",
   "landmark",
   "rail",
-  "elevated",
   "railStation",
   "freightStation",
-  "subway",
-  "subwayStation",
   ...PROJECTS,
 ];
 
@@ -662,12 +614,12 @@ export function isRail(type: BuildingType | undefined): boolean {
   return type === "rail";
 }
 
-/** 旅客の駅（鉄道駅・地下鉄駅） */
+/** 旅客の駅 */
 export function isPassengerStation(type: BuildingType | undefined): boolean {
-  return type === "railStation" || type === "subwayStation";
+  return type === "railStation";
 }
 
-/** 線路の上に置く駅（撤去すると線路に戻る） */
+/** 線路の上に置く駅（駅・貨物駅） */
 export function isTrackStation(type: BuildingType | undefined): boolean {
   return type === "railStation" || type === "freightStation";
 }

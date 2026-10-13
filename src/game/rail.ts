@@ -12,11 +12,9 @@ export const RAIL = {
   cut: 0.6,
   /** バスと鉄道を重ねても、車はここまでしか減らない（7割減まで） */
   floor: 0.3,
-  /** 踏切の道路の容量の倍率 */
-  crossing: 0.75,
   /** 乗客1人あたりの運賃 */
   fare: 120,
-  /** 鉄橋の建設費（1マス） */
+  /** 川や海の上に線路を引く費用（1マス） */
   bridgeCost: 250_000,
   /** 貨物駅の効き目が届く範囲（マス）と、工場の車を減らす割合 */
   freightRadius: 5,
@@ -31,7 +29,7 @@ const BUS_LINK = 8;
 export interface RailLine {
   id: number;
   tiles: number[];
-  /** 旅客の駅（鉄道駅・地下鉄駅） */
+  /** 旅客の駅 */
   stations: number[];
   /** 貨物駅 */
   freight: number[];
@@ -58,48 +56,32 @@ export interface RailNetwork {
 }
 
 export interface BusRoutes {
-  /** 停留所（バス停・バスターミナル・鉄道駅）ごとの路線番号 */
+  /** 停留所（バス停・バスターミナル・駅）ごとの路線番号 */
   routeOf: Map<number, number>;
   /** 路線ごとの停留所 */
   routes: number[][];
   /** 停留所どうしを結ぶ道路の道のり（表示用） */
   paths: Array<{ route: number; tiles: number[] }>;
-  /** 路線にバスターミナルか鉄道駅が入っている（直通） */
+  /** 路線にバスターミナルか駅が入っている（直通） */
   hub: boolean[];
 }
 
-/** 線路として連結するマスか（線路・鉄道駅・踏切・新幹線駅） */
+/** 線路として連結するマスか（線路・新幹線駅） */
 export function isTrackTile(s: GameState, i: number): boolean {
   const t = s.tiles[i];
   if (!t) return false;
-  return !!t.subway || isSurfaceTrack(s, i);
-}
-
-/** となりに地上の線路（線路・駅・踏切）があるか（「線路は道路の代わりにならない」案内に使う） */
-export function besideGroundTrack(s: GameState, i: number): boolean {
-  return neighbors4(i, s.width, s.height).some((j) => {
-    const b = s.tiles[j].building;
-    return !!b && (b.type === "rail" || b.type === "railStation" || b.type === "freightStation");
-  });
-}
-
-/** 地上の線路として置かれているか（線路・駅・踏切。高架や地下鉄だけのマスは含まない） */
-export function hasGroundTrack(b: { type: string; rail?: boolean } | null | undefined): boolean {
-  return !!b && (b.type === "rail" || b.type === "railStation" || b.type === "freightStation" || !!b.rail);
-}
-
-/** 地上の線路か（線路・高架・鉄道駅・貨物駅・踏切・新幹線駅。地下鉄のトンネルと地下鉄駅は含まない） */
-export function isSurfaceTrack(s: GameState, i: number): boolean {
-  const t = s.tiles[i];
-  if (!t) return false;
-  // 高架は地上（空）の線路なので、地図の端ならとなり町へ続く
-  if (t.elevated) return true;
+  if (t.track) return true;
   const b = t.building;
-  if (!b) return false;
-  if (b.type === "rail" || b.type === "railStation" || b.type === "freightStation" || b.rail) return true;
-  if (b.type === "bulletTrain") return true;
-  if (b.type === "annex" && b.anchor !== undefined) return s.tiles[b.anchor]?.building?.type === "bulletTrain";
-  return false;
+  if (b?.type === "bulletTrain") return true;
+  return b?.type === "annex" && b.anchor !== undefined && s.tiles[b.anchor]?.building?.type === "bulletTrain";
+}
+
+/** となりに、建物のない線路か駅があるか（「線路は道路の代わりにならない」案内に使う） */
+export function besideTrack(s: GameState, i: number): boolean {
+  return neighbors4(i, s.width, s.height).some((j) => {
+    const t = s.tiles[j];
+    return !!t.track && (!t.building || isStationType(t.building.type));
+  });
 }
 
 function onEdge(s: GameState, i: number): boolean {
@@ -123,12 +105,12 @@ export function computeRailNetwork(s: GameState): RailNetwork {
       const b = s.tiles[i].building;
       if (isPassengerStation(b?.type)) line.stations.push(i);
       if (b?.type === "freightStation") line.freight.push(i);
-      // 新幹線駅（2×2 のどのマスでも）。トンネルの上にある別の大型施設は数えない
+      // 新幹線駅（2×2 のどのマスでも）
       const anchor = b?.type === "annex" ? b.anchor : i;
       const bullet = anchor !== undefined ? s.tiles[anchor]?.building : undefined;
       if ((b?.type === "bulletTrain" || b?.type === "annex") && bullet?.type === "bulletTrain" && bullet.level > 0) line.shinkansen = true;
-      // となり町とつながるのは地上の線路だけ（地図の端の道路や家の下を通るトンネルは数えない）
-      if (onEdge(s, i) && isSurfaceTrack(s, i)) line.edge = true;
+      // 地図の端まで来ていれば、となり町とつながる
+      if (onEdge(s, i)) line.edge = true;
       for (const j of neighbors4(i, s.width, s.height)) {
         if (lineOf[j] === -1 && isTrackTile(s, j)) {
           lineOf[j] = id;
@@ -168,13 +150,13 @@ export function computeRailNetwork(s: GameState): RailNetwork {
 /** 駅の効き目の範囲（旅客の駅は乗客の範囲、貨物駅は工場の範囲。駅でなければ 0） */
 export function stationRange(type: string | undefined, level = 1): number {
   if (type === "freightStation") return RAIL.freightRadius;
-  if (type === "railStation" || type === "subwayStation") return stationRadius(level);
+  if (type === "railStation") return stationRadius(level);
   return 0;
 }
 
-/** 駅の種類（鉄道駅・地下鉄駅・貨物駅） */
+/** 駅の種類（駅・貨物駅） */
 export function isStationType(t: string | undefined): boolean {
-  return t === "railStation" || t === "subwayStation" || t === "freightStation";
+  return t === "railStation" || t === "freightStation";
 }
 
 /** 駅（旅客・貨物）がある路線か */
@@ -187,7 +169,7 @@ export function stationRadius(level: number): number {
   return RAIL.radius + (level >= 3 ? 1 : 0);
 }
 
-/** 駅（鉄道駅・地下鉄駅・貨物駅）が動いているか（電車が走る路線にあるか） */
+/** 駅（駅・貨物駅）が動いているか（電車が走る路線にあるか） */
 export function stationWorking(rail: RailNetwork, i: number): boolean {
   const id = rail.lineOf[i];
   return id >= 0 && !!rail.lines[id]?.working;
@@ -195,7 +177,7 @@ export function stationWorking(rail: RailNetwork, i: number): boolean {
 
 function isStop(s: GameState, i: number): boolean {
   const t = s.tiles[i].building?.type;
-  return t === "busStop" || t === "station" || t === "railStation" || t === "subwayStation";
+  return t === "busStop" || t === "station" || t === "railStation";
 }
 
 /** バス路線：道路をたどって近くの停留所どうしを自動でつなぐ */

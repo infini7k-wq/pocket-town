@@ -53,15 +53,14 @@ export function computeBudget(state: GameState, ctx: BudgetContext): BudgetBreak
   let resLand = 0;
 
   state.tiles.forEach((t, i) => {
-    // 地下鉄のトンネルの維持費（地上の建物とは別）
-    if (t.subway) roads += BUILDINGS.subway.upkeep;
-    if (t.elevated) roads += BUILDINGS.elevated.upkeep;
+    // 線路の維持費（下の道路や建物とは別）
+    if (t.track) roads += BUILDINGS.rail.upkeep;
     const b = t.building;
     if (!b) return;
     const def = BUILDINGS[b.type];
     const building = def.category === "project" && b.level === 0; // 建設中の大型施設は維持費なし
-    // 道路・線路の維持費（踏切は道路と線路の両方）
-    if (isRoad(b.type) || b.type === "rail") roads += def.upkeep + (b.rail ? BUILDINGS.rail.upkeep : 0);
+    // 道路の維持費
+    if (isRoad(b.type)) roads += def.upkeep;
     else if (!building) services += def.upkeep;
     if (def.revenue && b.level > 0 && ctx.connected[i]) facilities += def.revenue;
     const land = ctx.landValue ? landTaxFactor(ctx.landValue[i]) : 1;

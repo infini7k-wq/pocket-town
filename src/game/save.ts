@@ -1,10 +1,11 @@
 // localStorage によるセーブ・ロード。データには version を持たせ、将来の構造変更は migrate で吸収する。
 
+import { BUILDINGS } from "./buildings";
 import { LEGACY_MAP_SIZE, MAP_SIZE, SAVE_VERSION } from "./config";
 import { createRng } from "./rng";
 import { addForests } from "./state";
 import { upsertHall, type HallRecord } from "./hall";
-import type { GameState, Tile } from "./types";
+import type { Building, BuildingType, GameState, Tile } from "./types";
 
 export const SAVE_KEY = "pocket-town/save";
 
@@ -103,13 +104,62 @@ function migrateV1(old: GameState): GameState {
 
 /** 古いバージョンのセーブデータを現在の形式に変換する（未知のバージョンは null） */
 export function migrateSave(data: GameState): GameState | null {
-  if (data.version === SAVE_VERSION) return data;
+  if (data.version === SAVE_VERSION) return migrateRailTracks(data);
   if (data.version === 1 && data.width === LEGACY_MAP_SIZE) return migrateSave(migrateV1(data));
   if (data.version === 2) {
     // v3：殿堂用のゲーム ID とチャレンジの状態を追加
-    return { ...data, version: 3, gameId: data.gameId ?? `legacy-${data.rngSeed.toString(36)}`, scenario: data.scenario ?? null };
+    return migrateSave({ ...data, version: 3, gameId: data.gameId ?? `legacy-${data.rngSeed.toString(36)}`, scenario: data.scenario ?? null });
   }
   return null;
+}
+
+/** 以前の版の線路（地上の線路・踏切・高架・地下鉄）と地下鉄駅 */
+interface LegacyRailTile {
+  building: (Omit<Building, "type"> & { type: string; rail?: boolean }) | null;
+  subway?: boolean;
+  subwayTurn?: number;
+  elevated?: boolean;
+  elevatedTurn?: number;
+}
+
+/**
+ * 線路を1種類にまとめた版への変換：地上の線路・踏切・高架・地下鉄はすべて「線路」（マスの track）に、
+ * 地下鉄駅は「駅」にする。どれもない古いセーブはそのまま返す。
+ */
+export function migrateRailTracks(data: GameState): GameState {
+  // 住民の声などに残っている、今はない道具（高架線路・地下鉄・地下鉄駅）を新しい道具に読みかえる
+  const toolMap: Record<string, BuildingType> = { elevated: "rail", subway: "rail", subwayStation: "railStation" };
+  const fixTool = <T extends { tool?: string }>(v: T): T => (v.tool && toolMap[v.tool] ? { ...v, tool: toolMap[v.tool] } : v);
+  if ((data.voices ?? []).some((v) => v.tool && toolMap[v.tool])) data = { ...data, voices: data.voices.map(fixTool) };
+  const legacy = data.tiles as unknown as LegacyRailTile[];
+  const needs = legacy.some((t) => t.subway || t.elevated || t.building?.rail || t.building?.type === "rail" || t.building?.type === "subwayStation");
+  if (!needs) return data;
+  const tiles = legacy.map((t) => {
+    const out: LegacyRailTile & { terrain?: Tile["terrain"]; track?: boolean } = { ...t };
+    let track = !!(t.subway || t.elevated);
+    const b = t.building ? { ...t.building } : null;
+    if (b?.type === "rail") {
+      out.building = null;
+      track = true;
+    } else if (b) {
+      if (b.rail) {
+        delete b.rail;
+        track = true;
+      }
+      if (b.type === "subwayStation") b.type = "railStation";
+      if (b.type === "railStation" || b.type === "freightStation") track = true;
+      out.building = b;
+    }
+    delete out.subway;
+    delete out.subwayTurn;
+    delete out.elevated;
+    delete out.elevatedTurn;
+    // 2×2 の大型施設の下には線路を残さない（新しい版では大型施設の上に線路は引けない）
+    const big = !!out.building && (out.building.type === "annex" || (BUILDINGS as Record<string, { size?: number }>)[out.building.type]?.size === 2);
+    if (track && !big) out.track = true;
+    return out as unknown as Tile;
+  });
+  return { ...data, tiles };
 }
 
 export function parseSave(raw: string | null): GameState | null {

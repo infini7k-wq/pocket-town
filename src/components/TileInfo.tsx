@@ -34,9 +34,10 @@ import {
   busStyle,
   lineStyle,
   hasStation,
-  besideGroundTrack,
+  besideTrack,
+  buildCost,
   isTrackStation,
-  removeElevated,
+  removeTrack,
   landTaxFactor,
   landValueContext,
   landValueFactors,
@@ -115,7 +116,7 @@ function LineRows({ state, a, i }: { state: GameState; a: CityAnalysis; i: numbe
       <Row label="電車">{line.working ? <span className="text-emerald-600">✓ 走っている（効き目 {Math.round(line.strength * 100)}%）</span> : <span className="text-amber-600">✗ まだ走っていない</span>}</Row>
       {!line.working && (
         <p className="mt-1 rounded-xl bg-amber-50 p-2 text-[11px] font-bold leading-relaxed text-amber-800">
-          {!hasStation(line) ? (line.tiles.every((j) => state.tiles[j].elevated || state.tiles[j].subway) && line.tiles.some((j) => state.tiles[j].elevated) ? "🚉 高架の下の、道路に面した空き地か住宅・お店・工場の場所に鉄道駅を置くと電車が走ります。" : line.tiles.some((j) => state.tiles[j].subway) ? "Ⓜ️ トンネルの上の空き地（道路に面した場所）に地下鉄駅を置くと電車が走ります。" : "🚉 線路の上（道路に面した場所）に鉄道駅か貨物駅を置くと電車が走ります。") : line.tiles.every((j) => state.tiles[j].subway) ? "🚇 トンネルをのばして、ほかの地下鉄駅か線路につなぐと電車が走ります。" : "🛤️ 線路をのばして、ほかの駅か地図の端（となり町）につなぐと電車が走ります。"}
+          {!hasStation(line) ? "🚉 線路の上の、道路に面した空き地か家の場所に駅（か貨物駅）を置くと電車が走ります。" : "🛤️ 線路をのばして、ほかの駅か地図の端（となり町）につなぐと電車が走ります。"}
         </p>
       )}
     </>
@@ -205,7 +206,7 @@ export function TileInfo({ onClose }: { onClose: () => void }) {
 
   const roadStatus = b && !isRoad(b.type) && b.type !== "cityHall" && (
     <Row label="道路">
-      {!a.net.roadAccess[i] ? <span className="text-rose-600">⛔ 道路に面していない{besideGroundTrack(state, i) ? "（線路は入口にならない）" : ""}</span> : !a.net.connected[i] ? <span className="text-amber-600">⚠️ 役所につながっていない</span> : <span className="text-emerald-600">✓ 接続OK</span>}
+      {!a.net.roadAccess[i] ? <span className="text-rose-600">⛔ 道路に面していない{besideTrack(state, i) ? "（線路は入口にならない）" : ""}</span> : !a.net.connected[i] ? <span className="text-amber-600">⚠️ 役所につながっていない</span> : <span className="text-emerald-600">✓ 接続OK</span>}
     </Row>
   );
 
@@ -215,9 +216,11 @@ export function TileInfo({ onClose }: { onClose: () => void }) {
     const h = HAPPINESS.base + factors.reduce((s, f) => s + f.value, 0);
     body = (
       <>
-        {header(tile.terrain === "water" ? "🌊" : tile.terrain === "forest" ? "🌲" : "🟩", unlocked ? "空き地" : "未開発エリア", `(${x}, ${y}) ${TERRAIN_TEXT[tile.terrain]}`)}
+        {tile.track
+          ? header("🛤️", "線路", `(${x}, ${y}) ・ 維持費 ${formatYen(BUILDINGS.rail.upkeep)}/月`)
+          : header(tile.terrain === "water" ? "🌊" : tile.terrain === "forest" ? "🌲" : "🟩", unlocked ? "空き地" : "未開発エリア", `(${x}, ${y}) ${TERRAIN_TEXT[tile.terrain]}`)}
         {!unlocked && <p className="mt-2 rounded-xl bg-slate-100 p-2 text-xs font-bold text-slate-600">🔒 街のランクが上がると開発できるようになります。</p>}
-        {unlocked && tile.terrain !== "water" && (
+        {unlocked && tile.terrain !== "water" && !tile.track && (
           <div className="mt-2">
             <p className="text-[11px] font-bold text-slate-500">ここに住宅を建てた場合の目安</p>
             <Meter label="満足度（見込み）" value={Math.max(0, Math.min(100, h))} />
@@ -244,8 +247,7 @@ export function TileInfo({ onClose }: { onClose: () => void }) {
             {Math.round(a.traffic.load[i])} / {cap}
           </Row>
           <Row label="役所への接続">{a.net.connected[i] ? <span className="text-emerald-600">✓ つながっている</span> : <span className="text-rose-600">✗ つながっていない</span>}</Row>
-          <Row label="維持費">{formatYen(BUILDINGS[b.type].upkeep + (b.rail ? BUILDINGS.rail.upkeep : 0))}/月</Row>
-          {b.rail && <Row label="踏切">🚧 電車待ちで流れが{Math.round((1 - RAIL.crossing) * 100)}%悪い</Row>}
+          <Row label="維持費">{formatYen(BUILDINGS[b.type].upkeep)}/月</Row>
           {busHere.length > 0 && (
             <Row label="バス路線">
               {busHere.map((r) => (
@@ -255,7 +257,6 @@ export function TileInfo({ onClose }: { onClose: () => void }) {
               ))}
             </Row>
           )}
-          {b.rail && <LineRows state={state} a={a} i={i} />}
           {sources.length > 0 && (
             <div className="mt-2">
               <div className="text-[11px] font-bold text-slate-500">この道路に車を出している建物（となりのマス）</div>
@@ -281,21 +282,10 @@ export function TileInfo({ onClose }: { onClose: () => void }) {
                 <li>{state.rank === "village" ? "町になると大通り（道路の約2.5倍）が使える" : "大通りに置き換える（道路の約2.5倍の車が通れる）"}</li>
                 <li>{state.rank === "village" ? "町になるとバス停が使える（範囲内の車が最大5割減）" : "バス停・バスターミナルの範囲に入れると、範囲内の建物の車が4〜5割減る（施設は道路に面して置く）"}</li>
                 <li>交差する道路を増やすと、車がほかの道路に流れる</li>
-                {rankIndex(state.rank) >= rankIndex("city") && <li>線路を敷いて鉄道駅を置くと、駅から4マス以内の車が最大6割減る（駅どうしか地図の端につなぐ）</li>}
+                {rankIndex(state.rank) >= rankIndex("city") && <li>線路を引いて駅を置くと、駅から4マス以内の車が最大6割減る（線路は道路の上にも引ける。駅どうしか地図の端につなぐ）</li>}
               </ul>
             </div>
           )}
-        </div>
-      </>
-    );
-  } else if (b.type === "rail") {
-    body = (
-      <>
-        {header("🛤️", tile.terrain === "water" ? "鉄橋" : "線路", `(${x}, ${y})`)}
-        <p className="mt-2 text-xs font-bold text-slate-600">{BUILDINGS.rail.description}</p>
-        <div className="mt-1">
-          <LineRows state={state} a={a} i={i} />
-          <Row label="維持費">{formatYen(BUILDINGS.rail.upkeep)}/月</Row>
         </div>
       </>
     );
@@ -376,7 +366,7 @@ export function TileInfo({ onClose }: { onClose: () => void }) {
   } else {
     const def = BUILDINGS[b.type];
     let covered = 0;
-    // バス停は路線になると範囲が広がる。鉄道駅は電車の効き目の範囲
+    // バス停は路線になると範囲が広がる。駅は電車の効き目の範囲
     const station = isStationType(b.type);
     const radius = b.type === "busStop" ? busStopBoost(a.busRoutes, state, i).radius : station ? stationRange(b.type, b.level) : (def.coverage?.radius ?? 0);
     let factories = 0;
@@ -442,33 +432,21 @@ export function TileInfo({ onClose }: { onClose: () => void }) {
   return (
     <div>
       {body}
-      {b && !isRoad(b.type) && !a.net.roadAccess[i] && besideGroundTrack(state, i) && (
+      {b && !isRoad(b.type) && !a.net.roadAccess[i] && besideTrack(state, i) && (
         <p className="mt-2 rounded-xl bg-rose-50 p-2 text-[11px] font-bold leading-relaxed text-rose-700">
-          🛤️ 線路は道路の代わりにならないので、線路と反対側に道路を通しましょう。街なかに線路を通すときは、家や道路をそのまま残せる「高架線路」が便利です。
+          🛤️ 線路は家の入口にならないので、建物は道路に面した場所に建てましょう（線路は道路や家の上にも引けます）。
         </p>
       )}
-      {tile.elevated && (
-        <div className="mt-2 flex items-center gap-2 rounded-xl bg-slate-100 p-2 text-[11px] font-bold text-slate-600">
-          <span className="min-w-0 flex-1">
-            🌉 上を高架線路が通っています{a.rail.lines[a.rail.lineOf[i]] ? `（${lineStyle(state, a.rail, a.rail.lineOf[i]).name}）` : ""}。真下ととなりには電車の音が届きます。{b && !isTrackStation(b.type) ? "下の「撤去」は建物だけを壊し、高架は残ります。" : ""}
-          </span>
-          {!isTrackStation(b?.type) && (
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => {
-                runAction((s) => removeElevated(s, i));
-              }}
-            >
-              高架を外す{tile.elevatedTurn === state.turn ? `（+${formatYen(BUILDINGS.elevated.cost, { compact: true })}）` : "（返金なし）"}
+      {tile.track && !isTrackStation(b?.type) && (
+        <div className="mt-2 rounded-xl bg-slate-100 p-2 text-[11px] font-bold text-slate-600">
+          <div className="flex items-center gap-2">
+            <span className="min-w-0 flex-1">🛤️ 線路が通っています。{b && !isRoad(b.type) ? "真下の家には電車の音が届きます。下の「撤去」は建物だけを壊し、線路は残ります。" : ""}</span>
+            <Button size="sm" variant="ghost" onClick={() => runAction((s) => removeTrack(s, i))}>
+              線路を外す{tile.trackTurn === state.turn ? `（+${formatYen(buildCost(state, "rail", i), { compact: true })}）` : "（返金なし）"}
             </Button>
-          )}
+          </div>
+          <LineRows state={state} a={a} i={i} />
         </div>
-      )}
-      {tile.subway && (
-        <p className="mt-2 rounded-xl bg-slate-100 p-2 text-[11px] font-bold text-slate-600">
-          🚇 地下に地下鉄のトンネルが通っています{a.rail.lines[a.rail.lineOf[i]] ? `（${lineStyle(state, a.rail, a.rail.lineOf[i]).name}）` : ""}。{b ? "" : tile.elevated ? "撤去ツールでは先に高架が外れ、もう一度でトンネルを埋められます。" : "撤去ツールでトンネルを埋められます。"}
-        </p>
       )}
       {rebuildTo.length > 0 && (
         <div className="mt-3 rounded-xl bg-slate-50 p-2">

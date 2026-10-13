@@ -19,12 +19,8 @@ export interface TileViewProps {
   overlay?: string;
   dim: boolean;
   badge?: "noRoad" | "disconnected" | "noLine";
-  /** 線路のつながり（上=1, 右=2, 下=4, 左=8）。0 以外なら線路を描く（道路なら踏切） */
+  /** 線路のつながり（上=1, 右=2, 下=4, 左=8）。あれば道路や建物の上に重ねて線路を描く */
   railMask?: number;
-  /** 地下鉄のトンネルのつながり（上=1, 右=2, 下=4, 左=8）。地上の建物の下に点線で描く */
-  subwayMask?: number;
-  /** 高架線路のつながり（上=1, 右=2, 下=4, 左=8）。建物の上に重ねて描く */
-  elevatedMask?: number;
   selected: boolean;
   flashKey?: number;
   preview?: "ok" | "bad";
@@ -137,42 +133,15 @@ function Sprite({ type, level, abandoned, size }: { type: BuildingType; level: n
   );
 }
 
-/** 線路（なぞって敷いたもの）。crossing = 道路の上の踏切（レールだけを描く） */
-function Track({ mask, crossing }: { mask: number; crossing: boolean }) {
-  const w = 0.34;
-  const inset = (1 - w) / 2;
-  const rails = (deg: number) => `linear-gradient(${deg}deg, transparent 18%, #455a64 18% 30%, transparent 30% 70%, #455a64 70% 82%, transparent 82%)`;
-  const look = (horizontal: boolean): React.CSSProperties =>
-    crossing
-      ? { backgroundImage: rails(horizontal ? 0 : 90) }
-      : { backgroundImage: `${rails(horizontal ? 0 : 90)}, repeating-linear-gradient(${horizontal ? "90deg" : "0deg"}, #8d6e63 0 3px, transparent 3px 7px)`, backgroundColor: "#d7ccc8" };
+/** 線路（道路や建物の上に重ねて描く。下が少し見えるよう半透明） */
+function Track({ mask }: { mask: number }) {
   const m = mask || 10; // つながりがなければ横向きの短い線路
-  const arm = (key: string, style: React.CSSProperties, horizontal: boolean) => <div key={key} className="absolute" style={{ ...look(horizontal), ...style }} aria-hidden />;
-  const reach = `${(0.5 + w / 2) * 100}%`;
-  return (
-    <>
-      {m & 1 ? arm("t", { left: `${inset * 100}%`, width: `${w * 100}%`, top: 0, height: reach }, false) : null}
-      {m & 4 ? arm("b", { left: `${inset * 100}%`, width: `${w * 100}%`, bottom: 0, height: reach }, false) : null}
-      {m & 8 ? arm("l", { top: `${inset * 100}%`, height: `${w * 100}%`, left: 0, width: reach }, true) : null}
-      {m & 2 ? arm("r", { top: `${inset * 100}%`, height: `${w * 100}%`, right: 0, width: reach }, true) : null}
-      {crossing && (
-        // 踏切の目印（黄色と黒のしま）
-        <div className="absolute left-[8%] top-[8%] h-[16%] w-[16%] rounded-full ring-1 ring-black/40" style={{ background: "repeating-linear-gradient(45deg, #facc15 0 2px, #111827 2px 4px)" }} aria-hidden />
-      )}
-    </>
-  );
-}
-
-/** 高架線路（コンクリートの橋げたの上にレール。下の建物が少し見えるよう半透明） */
-function Elevated({ mask }: { mask: number }) {
-  const m = mask || 10;
-  const w = 0.3;
+  const w = 0.32;
   const inset = (1 - w) / 2;
   const reach = `${(0.5 + w / 2) * 100}%`;
   const look = (horizontal: boolean): React.CSSProperties => ({
-    backgroundImage: `linear-gradient(${horizontal ? 0 : 90}deg, transparent 20%, #334155 20% 32%, transparent 32% 68%, #334155 68% 80%, transparent 80%)`,
-    backgroundColor: "rgba(203,213,225,0.6)",
-    boxShadow: "0 2px 0 rgba(71,85,105,0.55)",
+    backgroundImage: `linear-gradient(${horizontal ? 0 : 90}deg, transparent 18%, #374151 18% 30%, transparent 30% 70%, #374151 70% 82%, transparent 82%), repeating-linear-gradient(${horizontal ? "90deg" : "0deg"}, rgba(120,85,60,0.8) 0 3px, transparent 3px 7px)`,
+    backgroundColor: "rgba(215,204,200,0.55)",
   });
   return (
     <div className="pointer-events-none absolute inset-0 z-[3]" aria-hidden>
@@ -181,23 +150,6 @@ function Elevated({ mask }: { mask: number }) {
       {m & 8 ? <div className="absolute" style={{ ...look(true), top: `${inset * 100}%`, height: `${w * 100}%`, left: 0, width: reach }} /> : null}
       {m & 2 ? <div className="absolute" style={{ ...look(true), top: `${inset * 100}%`, height: `${w * 100}%`, right: 0, width: reach }} /> : null}
     </div>
-  );
-}
-
-/** 地下鉄のトンネル（地下なので点線で控えめに描く） */
-function Subway({ mask }: { mask: number }) {
-  const m = mask || 10;
-  const dash = (deg: number) => `repeating-linear-gradient(${deg}deg, rgba(51,65,85,0.75) 0 3px, transparent 3px 6px)`;
-  const w = "12%";
-  const off = "44%";
-  const reach = "56%";
-  return (
-    <>
-      {m & 1 ? <div className="absolute" style={{ left: off, width: w, top: 0, height: reach, backgroundImage: dash(0) }} aria-hidden /> : null}
-      {m & 4 ? <div className="absolute" style={{ left: off, width: w, bottom: 0, height: reach, backgroundImage: dash(0) }} aria-hidden /> : null}
-      {m & 8 ? <div className="absolute" style={{ top: off, height: w, left: 0, width: reach, backgroundImage: dash(90) }} aria-hidden /> : null}
-      {m & 2 ? <div className="absolute" style={{ top: off, height: w, right: 0, width: reach, backgroundImage: dash(90) }} aria-hidden /> : null}
-    </>
   );
 }
 
@@ -264,14 +216,11 @@ function TileViewImpl(p: TileViewProps) {
         <span className={cx("tree absolute inset-0 flex items-center justify-center leading-none", `tree-${(Math.imul(p.i, 2654435761) >>> 0) % 4}`)} style={{ fontSize: s * 0.5 }} aria-hidden />
       )}
       {p.railStrip && <RailStrip edge={p.railStrip} />}
-      {p.railMask !== undefined && !road && <Track mask={p.railMask} crossing={false} />}
       {road && <Road mask={p.roadMask} avenue={p.type === "avenue"} traffic={p.traffic} size={s} />}
-      {p.railMask !== undefined && road && <Track mask={p.railMask} crossing />}
-      {p.subwayMask !== undefined && <Subway mask={p.subwayMask} />}
       {p.type && p.bigSize === 2 && <BigSprite type={p.type} level={p.level} buildLeft={p.buildLeft} size={s} railSide={p.railSide} />}
-      {p.type && !road && !p.bigSize && p.type !== "annex" && p.type !== "rail" && <Sprite type={p.type} level={p.level} abandoned={p.abandoned} size={s} />}
-      {/* 高架は建物の上に重ねる（高架の駅のマスは駅の絵を見せるので描かない） */}
-      {p.elevatedMask !== undefined && <Elevated mask={p.elevatedMask} />}
+      {p.type && !road && !p.bigSize && p.type !== "annex" && <Sprite type={p.type} level={p.level} abandoned={p.abandoned} size={s} />}
+      {/* 線路は道路や建物の上に重ねる（駅のマスは駅の絵を見せるので描かない） */}
+      {p.railMask !== undefined && <Track mask={p.railMask} />}
       {p.soon && (
         <span className="animate-bounce-soft pointer-events-none absolute left-[2%] top-[-4%] leading-none" style={{ fontSize: s * 0.32 }} title="もうすぐ育ちます" aria-hidden>
           ✨

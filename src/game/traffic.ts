@@ -53,7 +53,7 @@ export function tripSplit(state: GameState, i: number, emp: Employment, coverage
   // 公共交通：範囲の端でも8割以上効く（満足度の効果のように端で半分にはしない）
   const transit = coverage.transit[i] ?? 0;
   const bus = transit > 0 ? TRAFFIC.transitReduction * (0.6 + 0.4 * Math.min(1, transit)) : 0;
-  // 鉄道駅のそば：さらに電車に乗りかえる（バスと重ねても7割減まで）
+  // 駅のそば：さらに電車に乗りかえる（バスと重ねても7割減まで）
   const train = RAIL.cut * (rail?.ride[i] ?? 0);
   const remain = Math.max(train > 0 ? RAIL.floor : 0, (1 - bus) * (1 - train));
   // 貨物駅のそばの工場：トラックが貨物列車に変わる
@@ -66,8 +66,7 @@ export function tripSplit(state: GameState, i: number, emp: Employment, coverage
 export function computeTraffic(state: GameState, emp: Employment, coverage: CoverageMap, fx: Effects, rail?: RailNetwork): TrafficResult {
   const { tiles, width, height } = state;
   const n = tiles.length;
-  // 踏切のある道路は、電車待ちで少し流れが悪い
-  const cap = tiles.map((t) => roadCapacity(t.building?.type) * (t.building?.rail ? RAIL.crossing : 1));
+  const cap = tiles.map((t) => roadCapacity(t.building?.type));
   let riders = 0;
   const stationRiders = new Map<number, number>();
   const isRoadAt = (i: number) => cap[i] > 0;

@@ -24,9 +24,6 @@ export type BuildingType =
   /** 鉄道 */
   | "rail"
   | "railStation"
-  | "subway"
-  | "elevated"
-  | "subwayStation"
   | "freightStation"
   /** 町の個性ごとの専用プロジェクト */
   | "forestPark"
@@ -62,21 +59,15 @@ export interface Building {
   buildLeft?: number;
   /** 2×2 の大型施設の一部（annex）なら、本体（左上）のマス */
   anchor?: number;
-  /** 道路・大通りのマスに線路が通っている（踏切） */
-  rail?: boolean;
 }
 
 export interface Tile {
   terrain: Terrain;
   building: Building | null;
-  /** 地下鉄のトンネルが通っている（地上の建物とは別に、地下にある） */
-  subway?: boolean;
-  /** 地下鉄を掘った turn（その月のうちに埋めれば全額戻る） */
-  subwayTurn?: number;
-  /** 高架の線路が上を通っている（下の道路や建物はそのまま） */
-  elevated?: boolean;
-  /** 高架を架けた turn（その月のうちに外せば全額戻る） */
-  elevatedTurn?: number;
+  /** 線路が通っている（下の道路や建物はそのまま。空き地・川の上にも引ける） */
+  track?: boolean;
+  /** 線路を引いた turn（その月のうちに外せば全額戻る） */
+  trackTurn?: number;
 }
 
 export type TraitId = "coastal" | "industrial" | "suburban" | "merchant";

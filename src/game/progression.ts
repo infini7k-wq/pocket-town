@@ -33,7 +33,10 @@ export function nextRank(id: RankId): RankDef | null {
 }
 
 export function isBuildingUnlocked(type: BuildingType, rank: RankId): boolean {
-  return rankIndex(rank) >= rankIndex(BUILDINGS[type].unlockRank);
+  const def = BUILDINGS[type];
+  // 古いセーブに残っている、今はない建物（地下鉄など）は使えない扱い
+  if (!def) return false;
+  return rankIndex(rank) >= rankIndex(def.unlockRank);
 }
 
 /** そのランクで新しく解禁される内容（ランクアップ演出用） */

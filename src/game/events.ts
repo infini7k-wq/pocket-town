@@ -462,7 +462,7 @@ export const EVENT_DEFS: EventDef[] = [
     tone: "bad",
     message: ({ state, tile }) => {
       const src = tile !== undefined ? noiseSources(state, tile) : { airport: false, factory: true, train: false };
-      if (src.train && !src.airport && !src.factory) return "高架線路のそばに住む住民から「電車の音で眠れない」と苦情が寄せられています。";
+      if (src.train && !src.airport && !src.factory) return "線路の下に住む住民から「電車の音で眠れない」と苦情が寄せられています。";
       return src.airport && !src.factory ? "空港の近くに住む住民から「飛行機の音で眠れない」と苦情が寄せられています。" : src.airport ? "工場と空港の近くに住む住民から「うるさくて眠れない」と苦情が寄せられています。" : "工場の近くに住む住民から「うるさくて眠れない」と苦情が寄せられています。";
     },
     weight: ({ state, a }) => (state.tiles.some((t, i) => t.building?.type === "residential" && t.building.occupants > 0 && a.noise[i] > 5) ? 1.4 : 0),
@@ -491,7 +491,7 @@ export const EVENT_DEFS: EventDef[] = [
         detail: "満足度 -4（3か月）",
         apply: ({ state }) => {
           modify(state, "noiseIgnored", "騒音への不満", "😠", 3, { happiness: -4 });
-          return "住民の不満がたまっています…。騒音のもと（工場・空港・高架線路）から住宅を離すのが根本的な解決です。";
+          return "住民の不満がたまっています…。騒音のもと（工場・空港・線路）から住宅を離すのが根本的な解決です。";
         },
       },
     ],

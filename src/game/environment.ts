@@ -3,7 +3,7 @@
 import { BUILDINGS } from "./buildings";
 import { ENVIRONMENT, INDUSTRIAL_NOISE } from "./config";
 import type { CoverageMap } from "./coverage";
-import { forEachInRadius, forEachInRange, neighbors4 } from "./map";
+import { forEachInRadius, forEachInRange } from "./map";
 import type { Effects } from "./modifiers";
 import type { TrafficResult } from "./traffic";
 import type { GameState } from "./types";
@@ -55,8 +55,8 @@ export function computeEnvironment(state: GameState, coverage: CoverageMap, traf
 }
 
 /** 工業による騒音（隣接で満額、2マス先で半分） */
-/** 高架線路の真下の騒音（となりのマスはその半分） */
-export const ELEVATED_NOISE = 6;
+/** 線路の真下の家に届く電車の音 */
+export const TRACK_NOISE = 6;
 
 export function computeNoise(state: GameState, fx: Effects): number[] {
   const { tiles, width, height } = state;
@@ -80,11 +80,9 @@ export function computeNoise(state: GameState, fx: Effects): number[] {
       noise[j] += d <= 1.5 ? base : base / 2;
     });
   });
-  // 高架線路：真下と、上下左右のとなりのマスに電車の音（ななめには届かない）
+  // 線路：真下のマスにだけ電車の音
   tiles.forEach((t, i) => {
-    if (!t.elevated) return;
-    noise[i] += ELEVATED_NOISE;
-    for (const j of neighbors4(i, width, height)) noise[j] += ELEVATED_NOISE / 2;
+    if (t.track) noise[i] += TRACK_NOISE;
   });
   // 大きな公園の林が、周り2マスの騒音をやわらげる
   tiles.forEach((t, i) => {
@@ -101,8 +99,8 @@ export function computeNoise(state: GameState, fx: Effects): number[] {
 export function noiseSources(state: GameState, i: number): { airport: boolean; factory: boolean; train: boolean } {
   let airport = false;
   let factory = false;
-  // 高架線路：真下か、となりのマス
-  const train = !!state.tiles[i]?.elevated || neighbors4(i, state.width, state.height).some((j) => !!state.tiles[j].elevated);
+  // 線路の真下
+  const train = !!state.tiles[i]?.track;
   state.tiles.forEach((t, j) => {
     const b = t.building;
     if (!b || b.abandoned || b.level === 0) return;

@@ -36,9 +36,7 @@ export function useTools(): ToolDef[] {
           (def.coverage && def.coverage.kind !== "shopping" ? `｜範囲${def.coverage.radius}マス` : "") +
           (def.upkeep ? `｜維持${formatYen(def.upkeep, { compact: true })}/月` : "") +
           (type === "road" ? "｜水の上は橋になる" : "") +
-          (type === "rail" ? "｜道路と交わると踏切、水の上は鉄橋。線路は家の入口にならない（反対側に道路が必要）。街なかは高架線路が便利" : "") +
-          (type === "elevated" ? "｜下の家や道路はそのまま。真下ととなりに電車の音" : "") +
-          (type === "subway" ? "｜建物・道路の下も通せる（川の下は不可）" : ""),
+          (type === "rail" ? "｜川や海の上は1マス¥25万。真下の家には電車の音" : ""),
       };
     }),
     { id: "bulldoze", emoji: "🚜", name: "撤去", hint: "壊す。今月建てた物は全額、町の施設・大型は建設費の40%が戻る（住宅・お店・工場は0）" },
@@ -68,7 +66,7 @@ function costLabel(t: ToolDef): string {
 const MOBILE_GROUPS: Array<{ id: string; label: string; ids: Tool[] }> = [
   { id: "basic", label: "道路・土地", ids: ["road", "avenue", "residential", "commercial", "industrial"] },
   { id: "service", label: "町の施設", ids: ["park", "bigPark", "school", "hospital", "fireStation", "plaza", "landmark"] },
-  { id: "transit", label: "交通", ids: ["busStop", "station", "rail", "elevated", "railStation", "freightStation", "subway", "subwayStation"] },
+  { id: "transit", label: "交通", ids: ["busStop", "station", "rail", "railStation", "freightStation"] },
   { id: "project", label: "大型", ids: ["reclaim"] },
 ];
 
@@ -172,7 +170,7 @@ const PALETTE_GROUPS: Array<{ label: string; note?: string; ids: Tool[]; project
   { label: "操作", ids: ["inspect", "bulldoze", "reclaim"] },
   { label: "道路", note: "建物は道路に面していないと使えない", ids: ["road", "avenue"] },
   { label: "住む・働く場所（民間）", note: "土地を用意すると住民や会社が建てて育てる。維持費なし", ids: ["residential", "commercial", "industrial"] },
-  { label: "交通（鉄道・バス）", note: "近くの車を減らして渋滞をやわらげる。バス停は道路でつながると路線になり、線路は駅どうし・地図の端とつなぐと電車が走る", ids: ["busStop", "station", "rail", "elevated", "railStation", "freightStation", "subway", "subwayStation"] },
+  { label: "交通（鉄道・バス）", note: "近くの車を減らして渋滞をやわらげる。バス停は道路でつながると路線になる。線路はどこでも引けて、駅どうしか地図の端とつなぐと電車が走る", ids: ["busStop", "station", "rail", "railStation", "freightStation"] },
   { label: "町の施設", note: "町のお金で建て、毎月維持費を払う。範囲内の住民が喜ぶ", ids: ["park", "bigPark", "school", "hospital", "fireStation", "plaza", "landmark"] },
   { label: "大型プロジェクト（2×2）", note: "数か月の工事で完成し、街全体が変わる。1つの街に1つずつ（メガシティで2つずつ）", ids: [], projects: true },
 ];

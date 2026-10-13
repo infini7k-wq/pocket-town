@@ -40,3 +40,8 @@ export function roadCol(s: GameState, x: number, y1: number, y2: number) {
 }
 
 export const idx = (s: GameState, x: number, y: number) => y * s.width + x;
+
+/** (x1,y)〜(x2,y) に線路を引く（下の建物はそのまま） */
+export function trackRow(s: GameState, y: number, x1: number, x2: number) {
+  for (let x = x1; x <= x2; x++) s.tiles[y * s.width + x].track = true;
+}

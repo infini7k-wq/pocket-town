@@ -3,7 +3,7 @@
 import type { CityAnalysis } from "./analysis";
 import { BUILDINGS, isRoad } from "./buildings";
 import { neighbors4 } from "./map";
-import { besideGroundTrack, isStationType, stationWorking } from "./rail";
+import { besideTrack, isStationType, stationWorking } from "./rail";
 import type { GameState } from "./types";
 
 export interface CityProblem {
@@ -28,7 +28,7 @@ export function cityProblems(state: GameState, a: CityAnalysis): CityProblem[] {
       out[0].push({
         tile: i,
         emoji: "⛔",
-        text: besideGroundTrack(state, i) ? `${name}が道路に面していないので使えません（線路は家の入口にならないので、反対側に道路を通そう）` : `${name}が道路に面していないので使えません`,
+        text: besideTrack(state, i) ? `${name}が道路に面していないので使えません（線路は家の入口にならないので、道路に面した場所へ）` : `${name}が道路に面していないので使えません`,
         kind: "noRoad",
       });
     else if (!a.net.connected[i]) out[1].push({ tile: i, emoji: "⚠️", text: `${name}から役所まで道路がつながっていません（効果が半分）`, kind: "disconnected" });
