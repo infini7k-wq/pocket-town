@@ -13,7 +13,7 @@ import { getPolicy, policyState } from "./policies";
 import { policyFor } from "./advice";
 import { promiseLabel, promiseProgress } from "./politics";
 import { isUnlockedTile, neighbors4 } from "./map";
-import { isStationType, stationWorking } from "./rail";
+import { besideGroundTrack, isStationType, stationWorking } from "./rail";
 import { getRank, isBuildingUnlocked, mayorTitle, rankIndex } from "./progression";
 import type { Rng } from "./rng";
 import type { BuildingType, GameState, MonthReport, Tone, Voice } from "./types";
@@ -215,16 +215,19 @@ export function voiceCandidates(state: GameState, a: CityAnalysis, report: Month
   if (noisiest >= 0) {
     const src = noiseSources(state, noisiest);
     const airport = src.airport && !src.factory;
+    const trainOnly = src.train && !src.airport && !src.factory;
     const share = pop > 0 ? noisyPeople / pop : 0;
     out.push({
       id: "noise",
       severity: 15 + share * 80 + Math.min(20, a.noise[noisiest]),
       tone: "bad",
       persona: "resident",
-      text: airport ? "飛行機の音がうるさくて眠れない！" : "工場の騒音がひどい！夜も眠れない。",
-      hint: airport
+      text: trainOnly ? "高架を走る電車の音が、家まで響いてくる…。" : airport ? "飛行機の音がうるさくて眠れない！" : "工場の騒音がひどい！夜も眠れない。",
+      hint: trainOnly
+        ? "高架線路の真下ととなりのマスには電車の音が届く。間に大きな公園を置くと騒音が半分に。住宅地を避けて通すのも手"
+        : airport
         ? "空港のまわり3マスには住宅を建てないようにしよう"
-        : `騒音は工場から2マス先まで届く。住宅と工場は3マス以上はなそう${rank >= 1 ? "（間に大きな公園を置くと騒音が半分に）" : ""}${src.airport ? "。空港の音も届いている" : ""}`,
+        : `騒音は工場から2マス先まで届く。住宅と工場は3マス以上はなそう${rank >= 1 ? "（間に大きな公園を置くと騒音が半分に）" : ""}${src.airport ? "。空港の音も届いている" : ""}${src.train ? "。高架の電車の音も届いている" : ""}`,
       tile: noisiest,
     });
   }
@@ -267,14 +270,15 @@ export function voiceCandidates(state: GameState, a: CityAnalysis, report: Month
     });
     out.push({
       id: "traffic",
-      tool: rank >= 2 && a.congestion > 25 ? (state.tiles.some((t) => t.building?.type === "rail") ? "railStation" : "rail") : rank >= 1 ? "busStop" : "road",
+      // 市からは鉄道：街が埋まっていても通せる高架線路をすすめ、線路があれば駅をすすめる
+      tool: rank >= 2 && a.congestion > 25 ? (state.tiles.some((t) => t.building?.type === "rail" || t.elevated) ? "railStation" : "elevated") : rank >= 1 ? "busStop" : "road",
       severity: a.congestion * 1.2,
       tone: "bad",
       persona: "worker",
       text: "朝の渋滞がひどくて会社に遅刻しそう。",
       hint:
         rank >= 2
-          ? "「場所を見る」で混んでいる道路を調べると、車を出している建物がわかる。大通り・バス路線のほか、線路と鉄道駅を置くと駅から4マス以内の車が最大6割減る"
+          ? "「場所を見る」で混んでいる道路を調べると、車を出している建物がわかる。大通り・バス路線のほか、鉄道駅を置くと駅から4マス以内の車が最大6割減る（街なかは、家や道路をそのまま残せる高架線路が便利）"
           : rank >= 1
             ? "「場所を見る」で混んでいる道路を調べると、車を出している建物がわかる。大通り・バス停の範囲・建物の反対側の道路で減らそう（「市」になると鉄道が使える）"
             : "建物の反対側にも道路を通すと車が分かれる（「町」になると大通りとバス停が使える）",
@@ -286,7 +290,16 @@ export function voiceCandidates(state: GameState, a: CityAnalysis, report: Month
   }
   const unzoned = state.tiles.findIndex((t, i) => t.building && isZone(t.building.type) && !a.net.roadAccess[i]);
   if (unzoned >= 0) {
-    out.push({ id: "noRoad", tool: "road", severity: 50, tone: "bad", persona: "newcomer", text: "土地はあるのに道路がなくて、家が建てられない。", hint: "建物は道路に面していないと使えない", tile: unzoned });
+    out.push({
+      id: "noRoad",
+      tool: "road",
+      severity: 50,
+      tone: "bad",
+      persona: "newcomer",
+      text: "土地はあるのに道路がなくて、家が建てられない。",
+      hint: besideGroundTrack(state, unzoned) ? "線路は家の入口にならない。線路と反対側に道路を通そう（街なかに線路を通すなら、家や道路をそのまま残せる高架線路が便利）" : "建物は道路に面していないと使えない",
+      tile: unzoned,
+    });
   } else {
     const disconnected = state.tiles.findIndex((t, i) => t.building && !isRoad(t.building.type) && BUILDINGS[t.building.type].category !== "special" && BUILDINGS[t.building.type].category !== "rail" && a.net.roadAccess[i] && !a.net.connected[i]);
     if (disconnected >= 0) {

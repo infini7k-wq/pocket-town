@@ -23,6 +23,8 @@ export interface TileViewProps {
   railMask?: number;
   /** 地下鉄のトンネルのつながり（上=1, 右=2, 下=4, 左=8）。地上の建物の下に点線で描く */
   subwayMask?: number;
+  /** 高架線路のつながり（上=1, 右=2, 下=4, 左=8）。建物の上に重ねて描く */
+  elevatedMask?: number;
   selected: boolean;
   flashKey?: number;
   preview?: "ok" | "bad";
@@ -161,6 +163,27 @@ function Track({ mask, crossing }: { mask: number; crossing: boolean }) {
   );
 }
 
+/** 高架線路（コンクリートの橋げたの上にレール。下の建物が少し見えるよう半透明） */
+function Elevated({ mask }: { mask: number }) {
+  const m = mask || 10;
+  const w = 0.3;
+  const inset = (1 - w) / 2;
+  const reach = `${(0.5 + w / 2) * 100}%`;
+  const look = (horizontal: boolean): React.CSSProperties => ({
+    backgroundImage: `linear-gradient(${horizontal ? 0 : 90}deg, transparent 20%, #334155 20% 32%, transparent 32% 68%, #334155 68% 80%, transparent 80%)`,
+    backgroundColor: "rgba(203,213,225,0.6)",
+    boxShadow: "0 2px 0 rgba(71,85,105,0.55)",
+  });
+  return (
+    <div className="pointer-events-none absolute inset-0 z-[3]" aria-hidden>
+      {m & 1 ? <div className="absolute" style={{ ...look(false), left: `${inset * 100}%`, width: `${w * 100}%`, top: 0, height: reach }} /> : null}
+      {m & 4 ? <div className="absolute" style={{ ...look(false), left: `${inset * 100}%`, width: `${w * 100}%`, bottom: 0, height: reach }} /> : null}
+      {m & 8 ? <div className="absolute" style={{ ...look(true), top: `${inset * 100}%`, height: `${w * 100}%`, left: 0, width: reach }} /> : null}
+      {m & 2 ? <div className="absolute" style={{ ...look(true), top: `${inset * 100}%`, height: `${w * 100}%`, right: 0, width: reach }} /> : null}
+    </div>
+  );
+}
+
 /** 地下鉄のトンネル（地下なので点線で控えめに描く） */
 function Subway({ mask }: { mask: number }) {
   const m = mask || 10;
@@ -247,14 +270,16 @@ function TileViewImpl(p: TileViewProps) {
       {p.subwayMask !== undefined && <Subway mask={p.subwayMask} />}
       {p.type && p.bigSize === 2 && <BigSprite type={p.type} level={p.level} buildLeft={p.buildLeft} size={s} railSide={p.railSide} />}
       {p.type && !road && !p.bigSize && p.type !== "annex" && p.type !== "rail" && <Sprite type={p.type} level={p.level} abandoned={p.abandoned} size={s} />}
+      {/* 高架は建物の上に重ねる（高架の駅のマスは駅の絵を見せるので描かない） */}
+      {p.elevatedMask !== undefined && <Elevated mask={p.elevatedMask} />}
       {p.soon && (
         <span className="animate-bounce-soft pointer-events-none absolute left-[2%] top-[-4%] leading-none" style={{ fontSize: s * 0.32 }} title="もうすぐ育ちます" aria-hidden>
           ✨
         </span>
       )}
 
-      {p.overlay && <div className="pointer-events-none absolute inset-0" style={{ background: p.overlay }} />}
-      {p.dim && <div className="pointer-events-none absolute inset-0 bg-slate-900/30" />}
+      {p.overlay && <div className="pointer-events-none absolute inset-0 z-[4]" style={{ background: p.overlay }} />}
+      {p.dim && <div className="pointer-events-none absolute inset-0 z-[4] bg-slate-900/30" />}
       {p.inRange && <div className="pointer-events-none absolute inset-0 bg-violet-400/30" />}
       {p.rangeEdge ? (
         <div
@@ -290,7 +315,7 @@ function TileViewImpl(p: TileViewProps) {
       )}
 
       {p.preview && (
-        <div className={cx("pointer-events-none absolute inset-[3%] flex items-center justify-center rounded-lg border-2", p.preview === "ok" ? "border-emerald-400 bg-emerald-300/40" : "border-rose-500 bg-rose-400/40")}>
+        <div className={cx("pointer-events-none absolute inset-[3%] z-[7] flex items-center justify-center rounded-lg border-2", p.preview === "ok" ? "border-emerald-400 bg-emerald-300/40" : "border-rose-500 bg-rose-400/40")}>
           {p.previewEmoji && (
             <span className="leading-none opacity-80" style={{ fontSize: s * 0.55 }}>
               {p.previewEmoji}
@@ -299,7 +324,7 @@ function TileViewImpl(p: TileViewProps) {
         </div>
       )}
 
-      {p.locked && <div className="pointer-events-none absolute inset-0 bg-slate-800/45" />}
+      {p.locked && <div className="pointer-events-none absolute inset-0 z-[4] bg-slate-800/45" />}
       {p.selected && <div className="animate-ring pointer-events-none absolute inset-[4%] z-10 rounded-lg" />}
       {p.flashKey ? <div key={p.flashKey} className="animate-flash pointer-events-none absolute inset-0 z-10" /> : null}
     </div>

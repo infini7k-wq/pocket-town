@@ -3,7 +3,7 @@
 import type { CityAnalysis } from "./analysis";
 import { BUILDINGS, isRoad } from "./buildings";
 import { neighbors4 } from "./map";
-import { isStationType, stationWorking } from "./rail";
+import { besideGroundTrack, isStationType, stationWorking } from "./rail";
 import type { GameState } from "./types";
 
 export interface CityProblem {
@@ -24,7 +24,13 @@ export function cityProblems(state: GameState, a: CityAnalysis): CityProblem[] {
     const cat = BUILDINGS[b.type].category;
     if (cat === "special" || cat === "rail") return;
     const name = BUILDINGS[b.type].name;
-    if (!a.net.roadAccess[i]) out[0].push({ tile: i, emoji: "⛔", text: `${name}が道路に面していないので使えません`, kind: "noRoad" });
+    if (!a.net.roadAccess[i])
+      out[0].push({
+        tile: i,
+        emoji: "⛔",
+        text: besideGroundTrack(state, i) ? `${name}が道路に面していないので使えません（線路は家の入口にならないので、反対側に道路を通そう）` : `${name}が道路に面していないので使えません`,
+        kind: "noRoad",
+      });
     else if (!a.net.connected[i]) out[1].push({ tile: i, emoji: "⚠️", text: `${name}から役所まで道路がつながっていません（効果が半分）`, kind: "disconnected" });
     else if (isStationType(b.type) && !stationWorking(a.rail, i)) out[2].push({ tile: i, emoji: "🚫", text: `${name}に電車が来ていません（線路でほかの駅か地図の端につなぐ）`, kind: "noLine" });
     if (b.abandoned) out[3].push({ tile: i, emoji: "🏚️", text: b.type === "residential" ? "空き家になっています（満足度を上げると人が戻る）" : b.type === "commercial" ? "空き店舗になっています（お客さんか働き手が足りない）" : "空き工場になっています（注文か働き手が足りない）", kind: "abandoned" });

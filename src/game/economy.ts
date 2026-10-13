@@ -55,6 +55,7 @@ export function computeBudget(state: GameState, ctx: BudgetContext): BudgetBreak
   state.tiles.forEach((t, i) => {
     // 地下鉄のトンネルの維持費（地上の建物とは別）
     if (t.subway) roads += BUILDINGS.subway.upkeep;
+    if (t.elevated) roads += BUILDINGS.elevated.upkeep;
     const b = t.building;
     if (!b) return;
     const def = BUILDINGS[b.type];

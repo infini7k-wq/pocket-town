@@ -25,6 +25,7 @@ export type BuildingType =
   | "rail"
   | "railStation"
   | "subway"
+  | "elevated"
   | "subwayStation"
   | "freightStation"
   /** 町の個性ごとの専用プロジェクト */
@@ -72,6 +73,10 @@ export interface Tile {
   subway?: boolean;
   /** 地下鉄を掘った turn（その月のうちに埋めれば全額戻る） */
   subwayTurn?: number;
+  /** 高架の線路が上を通っている（下の道路や建物はそのまま） */
+  elevated?: boolean;
+  /** 高架を架けた turn（その月のうちに外せば全額戻る） */
+  elevatedTurn?: number;
 }
 
 export type TraitId = "coastal" | "industrial" | "suburban" | "merchant";

@@ -75,10 +75,25 @@ export function isTrackTile(s: GameState, i: number): boolean {
   return !!t.subway || isSurfaceTrack(s, i);
 }
 
-/** 地上の線路か（線路・鉄道駅・貨物駅・踏切・新幹線駅。地下鉄のトンネルと地下鉄駅は含まない） */
+/** となりに地上の線路（線路・駅・踏切）があるか（「線路は道路の代わりにならない」案内に使う） */
+export function besideGroundTrack(s: GameState, i: number): boolean {
+  return neighbors4(i, s.width, s.height).some((j) => {
+    const b = s.tiles[j].building;
+    return !!b && (b.type === "rail" || b.type === "railStation" || b.type === "freightStation");
+  });
+}
+
+/** 地上の線路として置かれているか（線路・駅・踏切。高架や地下鉄だけのマスは含まない） */
+export function hasGroundTrack(b: { type: string; rail?: boolean } | null | undefined): boolean {
+  return !!b && (b.type === "rail" || b.type === "railStation" || b.type === "freightStation" || !!b.rail);
+}
+
+/** 地上の線路か（線路・高架・鉄道駅・貨物駅・踏切・新幹線駅。地下鉄のトンネルと地下鉄駅は含まない） */
 export function isSurfaceTrack(s: GameState, i: number): boolean {
   const t = s.tiles[i];
   if (!t) return false;
+  // 高架は地上（空）の線路なので、地図の端ならとなり町へ続く
+  if (t.elevated) return true;
   const b = t.building;
   if (!b) return false;
   if (b.type === "rail" || b.type === "railStation" || b.type === "freightStation" || b.rail) return true;

@@ -15,6 +15,7 @@ import {
   dragDemolishable,
   isTrackTile,
   isTrackStation,
+  hasGroundTrack,
   isStationType,
   hasStation,
   lineStyle,
@@ -297,13 +298,14 @@ export function CityMap() {
       return { ok: c.ok, emoji: "🟩", text: c.ok ? `埋め立て ¥${c.cost.toLocaleString("ja-JP")}` : c.reason };
     }
     if (tool === "bulldoze") {
-      if (!state.tiles[hover]?.building && !state.tiles[hover]?.subway) return null;
+      if (!state.tiles[hover]?.building && !state.tiles[hover]?.subway && !state.tiles[hover]?.elevated) return null;
       const c = checkDemolish(state, hover);
       return { ok: c.ok, emoji: "🚜", text: c.ok ? (c.refund > 0 ? `撤去 +¥${c.refund.toLocaleString("ja-JP")}` : "撤去") : c.reason };
     }
     // 建てた直後や、すでに建物があるマスではエラーを出さない（大通りへの置き換えだけは案内する）
     const existing = state.tiles[hover]?.building;
-    if (existing && !isUpgradeTarget(tool, existing) && !(isTrackStation(tool) && existing.type === "rail")) return null;
+    if (tool === "elevated" && state.tiles[hover]?.elevated) return null;
+    if (existing && !isUpgradeTarget(tool, existing) && !(isTrackStation(tool) && (existing.type === "rail" || state.tiles[hover]?.elevated))) return null;
     if ((isRoad(tool) || tool === "rail") && existing && isUpgradeTarget(tool, existing) && (tool === "rail" || existing.type === "rail")) {
       const c = checkPlacement(state, tool, hover);
       return { ok: c.ok, emoji: "🚧", text: c.ok ? `踏切 ¥${c.cost.toLocaleString("ja-JP")}` : c.reason };
@@ -313,7 +315,9 @@ export function CityMap() {
       return { ok: c.ok, emoji: "🌉", text: c.ok ? `${tool === "rail" ? "鉄橋" : "橋"} ¥${c.cost.toLocaleString("ja-JP")}` : c.reason };
     }
     const c = checkPlacement(state, tool, hover);
-    return { ok: c.ok, emoji: buildingEmoji(tool, 1), text: c.ok ? `¥${c.cost.toLocaleString("ja-JP")}` : c.reason };
+    // 高架の駅で家などを建て替えるときは、そのことを見せる
+    const replace = c.ok && isTrackStation(tool) && existing && isZone(existing.type) ? `${buildingEmoji(existing.type, existing.level)}→${buildingEmoji(tool, 1)} 建て替え ` : "";
+    return { ok: c.ok, emoji: buildingEmoji(tool, 1), text: c.ok ? `${replace}¥${c.cost.toLocaleString("ja-JP")}` : c.reason };
   }, [hover, tool, state]);
 
   const tileAt = (x: number, y: number): number | null => {
@@ -679,6 +683,8 @@ export function CityMap() {
       // 地図の端の線路は、となり町へ続くように外へ延ばして描く
       const railMask = track ? neighborMask(state, i, (j) => isTrackTile(state, j), true) : undefined;
       const subwayMask = t.subway ? neighborMask(state, i, (j) => isTrackTile(state, j)) : undefined;
+      // 地図の端の高架も、となり町へ続くように外へ延ばして描く（高架の駅のマスは駅の絵だけ）
+      const elevatedMask = t.elevated && !isTrackStation(b?.type) ? neighborMask(state, i, (j) => isTrackTile(state, j), true) : undefined;
       const locked = !isUnlockedTile(state, i);
       const { ov, dim } = locked ? NO_OVERLAY : tileOverlay(state, analysis, i, overlay, covKind, busTiles);
       const badge = tileBadge(state, analysis, i);
@@ -695,6 +701,7 @@ export function CityMap() {
           roadMask={roadMask}
           railMask={railMask}
           subwayMask={subwayMask}
+          elevatedMask={elevatedMask}
           traffic={road ? analysis.traffic.level[i] : 0}
           locked={locked}
           overlay={ov}
@@ -868,7 +875,8 @@ export function CityMap() {
               {draftSim.bridges > 0 && <span className="ml-1">🌉 {tool === "rail" ? "鉄橋" : "橋"}{draftSim.bridges}</span>}
               {draftSim.reason && <span className="ml-1 text-rose-300">{draftSim.reason}</span>}
             </div>
-            {draftSim.unlinked && <div className="text-[11px] font-bold text-amber-300">⚠️ まだ駅につながっていません（{tool === "subway" ? "トンネルの上の空き地に地下鉄駅を置く" : "線路の上に鉄道駅を置く"}と電車が走ります）</div>}
+            {draftSim.unlinked && <div className="text-[11px] font-bold text-amber-300">⚠️ まだ駅につながっていません（{tool === "subway" ? "トンネルの上の空き地に地下鉄駅を置く" : tool === "elevated" ? "高架の下の、道路に面した空き地か住宅・お店・工場の場所に鉄道駅を置く" : "線路の上に鉄道駅を置く"}と電車が走ります）</div>}
+            {tool === "rail" && draftSim.buildingSkips > 0 && <div className="text-[11px] font-bold text-sky-300">💡 建物のある所は飛ばします。家や道路を壊さずに通すなら「高架線路」が便利です</div>}
           </div>
           <button type="button" onClick={() => setDraft(null)} className="rounded-full bg-white/15 px-3 py-2 text-xs font-black">
             ✕ やめる
@@ -1122,11 +1130,12 @@ function simulateStroke(state: GameState, tool: Tool, tiles: number[]) {
         reason ??= c.reason;
       }
     }
-    return { ok, bad, skipped, crossings: 0, bridges: 0, unlinked: false, cost: state.money - money, reason, label: `${BUILDINGS[tool].emoji[1]} ${BUILDINGS[tool].name}`, emoji: buildingEmoji(tool, 1) };
+    return { ok, bad, skipped, crossings: 0, bridges: 0, buildingSkips: 0, unlinked: false, cost: state.money - money, reason, label: `${BUILDINGS[tool].emoji[1]} ${BUILDINGS[tool].name}`, emoji: buildingEmoji(tool, 1) };
   }
   let skipped = 0;
   let crossings = 0;
   let bridges = 0;
+  let buildingSkips = 0;
   let cur = state;
   let reason: string | undefined;
   tiles.forEach((i, k) => {
@@ -1136,7 +1145,7 @@ function simulateStroke(state: GameState, tool: Tool, tiles: number[]) {
     let r;
     if (tool === "bulldoze") {
       const b = t.building;
-      if ((!b && (painting || !t.subway)) || (b && painting && !dragDemolishable(b.type))) {
+      if ((!b && (painting || !(t.subway || t.elevated))) || (b && painting && !dragDemolishable(b.type))) {
         skipped++;
         return;
       }
@@ -1149,8 +1158,13 @@ function simulateStroke(state: GameState, tool: Tool, tiles: number[]) {
       r = reclaim(cur, i);
     } else if (tool !== "inspect") {
       const existing = t.building;
+      if (tool === "elevated" && t.elevated) {
+        skipped++;
+        return;
+      }
       if (existing && !isUpgradeTarget(tool, existing)) {
         skipped++;
+        if (tool === "rail" && !isRoad(existing.type) && !hasGroundTrack(existing)) buildingSkips++;
         return;
       }
       if (tool === "rail" || isRoad(tool)) {
@@ -1171,11 +1185,11 @@ function simulateStroke(state: GameState, tool: Tool, tiles: number[]) {
   const emoji = tool === "bulldoze" ? "🚜" : tool === "reclaim" ? "🟩" : tool === "inspect" ? "" : buildingEmoji(tool, 1);
   // 線路：まだ駅につながっていない（電車が走らない）なら知らせる
   let unlinked = false;
-  if ((tool === "rail" || tool === "subway") && ok.size > 0) {
+  if ((tool === "rail" || tool === "subway" || tool === "elevated") && ok.size > 0) {
     const net = computeRailNetwork(cur);
     unlinked = [...ok].some((i) => { const l = net.lines[net.lineOf[i]]; return !!l && !hasStation(l); });
   }
-  return { ok, bad, skipped, crossings, bridges, unlinked, cost: state.money - cur.money, reason, label, emoji };
+  return { ok, bad, skipped, crossings, bridges, buildingSkips, unlinked, cost: state.money - cur.money, reason, label, emoji };
 }
 
 type Side = "top" | "right" | "bottom" | "left";

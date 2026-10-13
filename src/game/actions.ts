@@ -5,7 +5,7 @@ import { ECONOMY, LAND_EXPANSION, MAP_SIZE, PROJECT_LIMIT } from "./config";
 import { createRng } from "./rng";
 import { anchorOf, countBuildings, footprint, isUnlockedTile, neighbors4, toXY } from "./map";
 import { getRank, isBuildingUnlocked, rankIndex } from "./progression";
-import { RAIL } from "./rail";
+import { RAIL, hasGroundTrack } from "./rail";
 import { newBuilding } from "./state";
 import type { ActionResult, Building, BuildingType, GameState, Tile, ZoneType } from "./types";
 
@@ -29,7 +29,9 @@ export function buildCost(state: GameState, type: BuildingType, i: number): numb
   // 水の上の線路は鉄橋の費用
   if (isRoad(type) && water) return ECONOMY.bridgeCost * (type === "avenue" ? 2 : 1);
   if (type === "rail" && water) return RAIL.bridgeCost;
-  if (type === "subway") return def.cost; // 地下なので地価・森は関係ない
+  // 地下・高架なので地価・森は関係ない（川の上の高架は鉄橋と同じ費用）
+  if (type === "elevated" && state.tiles[i]?.terrain === "water") return Math.max(def.cost, RAIL.bridgeCost);
+  if (type === "subway" || type === "elevated") return def.cost;
   const land = isRoad(type) || type === "rail" ? 1 : state.profile.landValue;
   let cost = Math.round((def.cost * land) / 1000) * 1000;
   for (const j of cellsFor(state, type, i)) if (state.tiles[j]?.terrain === "forest") cost += ECONOMY.forestClearCost;
@@ -88,7 +90,8 @@ export function expandLand(state: GameState): ActionResult {
   // 地図の端まで来ていた線路は、新しい土地の端まで延ばす（となり町とつながったまま）
   for (let i = 0; i < state.tiles.length; i++) {
     const b = state.tiles[i].building;
-    if (!b || !(b.type === "rail" || isTrackStation(b.type) || b.rail)) continue;
+    const elevated = !!state.tiles[i].elevated;
+    if (!elevated && (!b || !(b.type === "rail" || isTrackStation(b.type) || b.rail))) continue;
     const { x, y } = toXY(i, oldW);
     const dirs: Array<[number, number]> = [];
     if (x === 0) dirs.push([-1, 0]);
@@ -98,6 +101,10 @@ export function expandLand(state: GameState): ActionResult {
     for (const [dx, dy] of dirs) {
       for (let k = 1; k <= band; k++) {
         const t = tiles[(y + band + dy * k) * w + (x + band + dx * k)];
+        if (elevated) {
+          t.elevated = true;
+          continue;
+        }
         if (t.terrain === "forest") t.terrain = "grass";
         t.building = newBuilding("rail", 1, state.turn);
       }
@@ -165,6 +172,14 @@ export function checkPlacement(state: GameState, type: BuildingType, i: number):
     }
   } else {
     if (!isUnlockedTile(state, i)) return { ok: false, cost, reason: "まだ開発できないエリアです（ランクアップで拡張）" };
+    if (type === "elevated") {
+      // 高架線路：道路・建物・川の上に架けられる（下はそのまま）
+      if (tile.elevated) return { ok: false, cost, reason: "すでに高架線路があります" };
+      if (hasGroundTrack(tile.building)) return { ok: false, cost, reason: "すでに線路があります（高架は線路のない所に架けます）" };
+      if (tile.building?.type === "annex" || (tile.building && BUILDINGS[tile.building.type].size === 2)) return { ok: false, cost, reason: "大きな施設（2×2）の上には高架を架けられません" };
+      if (state.money < cost) return { ok: false, cost, reason: `資金が足りません（${yen(cost)} 必要）` };
+      return { ok: true, cost };
+    }
     if (type === "subway") {
       // 地下鉄のトンネル：建物や道路の下にも掘れる（川や海の下は無理）
       if (tile.terrain === "water") return { ok: false, cost, reason: "川や海の下には地下鉄を通せません" };
@@ -175,11 +190,16 @@ export function checkPlacement(state: GameState, type: BuildingType, i: number):
     if (tile.terrain === "water" && !isRoad(type) && type !== "rail") return { ok: false, cost, reason: "水の上には道路・線路（橋）しか建てられません" };
     const existing = tile.building;
     const roadSide = neighbors4(i, state.width, state.height).some((j) => isRoad(state.tiles[j].building?.type));
+    if (type === "rail" && tile.elevated) return { ok: false, cost, reason: "高架線路の下には線路を敷けません（高架がそのまま線路になります）" };
     if (isTrackStation(type)) {
-      // 鉄道駅・貨物駅は線路の上に、道路に面して置く
-      if (existing?.type !== "rail") return { ok: false, cost, reason: existing?.rail ? "踏切には駅を置けません（となりの線路に置いてください）" : `${def.name}は線路の上に置いてください` };
-      if (tile.terrain === "water") return { ok: false, cost, reason: "鉄橋の上には駅を置けません" };
-      if (!roadSide) return { ok: false, cost, reason: `${def.name}は道路に面した線路の上に置いてください` };
+      // 鉄道駅・貨物駅は線路の上に、道路に面して置く。高架の下なら空き地か住宅・お店・工場の場所（建て替わる）
+      if (tile.elevated) {
+        if (existing && !isZone(existing.type)) return { ok: false, cost, reason: isRoad(existing.type) ? "高架の駅は道路の上には置けません（となりの家か空き地に置いてください）" : "高架の駅は、空き地か住宅・お店・工場の場所に置けます" };
+      } else if (existing?.type !== "rail") {
+        return { ok: false, cost, reason: existing?.rail ? "踏切には駅を置けません（となりの線路に置いてください）" : `${def.name}は線路か高架線路の上に置いてください` };
+      }
+      if (tile.terrain === "water") return { ok: false, cost, reason: tile.elevated ? "水の上には駅を置けません" : "鉄橋の上には駅を置けません" };
+      if (!roadSide) return { ok: false, cost, reason: `${def.name}は道路に面した場所に置いてください` };
     } else if (type === "subwayStation") {
       // 地下鉄駅は、トンネルの上の空き地に、道路に面して置く
       if (!tile.subway) return { ok: false, cost, reason: "地下鉄駅は地下鉄のトンネルの上に置いてください（先に地下鉄をなぞって掘る）" };
@@ -202,7 +222,7 @@ export function checkPlacement(state: GameState, type: BuildingType, i: number):
  * - 道路・大通りに線路を通す（踏切）／線路の上に道路・大通りを通す（踏切）
  */
 export function isUpgradeTarget(type: BuildingType, existing: Pick<Building, "type" | "rail">): boolean {
-  if (type === "subway") return true; // 地下なので、地上に何があっても掘れる
+  if (type === "subway" || type === "elevated") return true; // 地下・高架なので、地上に何があっても通せる
   if (type === "avenue" && existing.type === "road") return true;
   if (type === "rail" && isRoad(existing.type) && !existing.rail) return true;
   if (isRoad(type) && existing.type === "rail") return true;
@@ -215,6 +235,13 @@ export function placeBuilding(state: GameState, type: BuildingType, i: number): 
   const draft = structuredClone(state);
   const tile = draft.tiles[i];
   const def = BUILDINGS[type];
+  if (type === "elevated") {
+    tile.elevated = true;
+    tile.elevatedTurn = draft.turn;
+    draft.money -= check.cost;
+    draft.monthSpend += check.cost;
+    return { ok: true, state: draft, message: `高架線路を架けました -${yen(check.cost)}` };
+  }
   if (type === "subway") {
     tile.subway = true;
     tile.subwayTurn = draft.turn;
@@ -280,6 +307,21 @@ export function placeZones(state: GameState, type: BuildingType, tiles: number[]
   return { ok: true, state: draft, placed, message: `${BUILDINGS[type].name}を${placed.length}マス -${yen(spent)}` };
 }
 
+/** 建物の上の高架線路だけを外す（建物はそのまま）。今月架けたものは全額戻る */
+export function removeElevated(state: GameState, i: number): ActionResult {
+  const t = state.tiles[i];
+  if (state.gameOver) return { ok: false, error: "ゲームは終了しています" };
+  if (!t?.elevated) return { ok: false, error: "高架線路はありません" };
+  if (isTrackStation(t.building?.type)) return { ok: false, error: "先に高架の駅を撤去してください" };
+  const refund = t.elevatedTurn === state.turn ? BUILDINGS.elevated.cost : 0;
+  const draft = structuredClone(state);
+  delete draft.tiles[i].elevated;
+  delete draft.tiles[i].elevatedTurn;
+  draft.money += refund;
+  draft.monthSpend = Math.max(0, draft.monthSpend - refund);
+  return { ok: true, state: draft, message: refund > 0 ? `高架線路を外しました +${yen(refund)}` : "高架線路を外しました" };
+}
+
 /** 撤去したときの返金額。今月建てたものは全額、公共施設・大型施設は一部を売却益として返金 */
 export function demolishRefund(state: GameState, i: number): number {
   const b = state.tiles[anchorOf(state, i)]?.building;
@@ -295,6 +337,7 @@ export function checkDemolish(state: GameState, i: number): { ok: boolean; refun
   if (state.gameOver) return { ok: false, refund: 0, reason: "ゲームは終了しています" };
   if (!b) {
     const t = state.tiles[i];
+    if (t?.elevated) return { ok: true, refund: t.elevatedTurn === state.turn ? BUILDINGS.elevated.cost : 0 };
     if (!t?.subway) return { ok: false, refund: 0, reason: "何も建っていません" };
     // 今月掘ったトンネルは全額戻る
     return { ok: true, refund: t.subwayTurn === state.turn ? BUILDINGS.subway.cost : 0 };
@@ -309,6 +352,14 @@ export function demolish(state: GameState, i: number): ActionResult {
   const draft = structuredClone(state);
   const a = anchorOf(draft, i);
   const b = draft.tiles[a].building;
+  if (!b && draft.tiles[i].elevated) {
+    // 地上に何もないマスの高架：高架を外す（地下鉄より先）
+    delete draft.tiles[i].elevated;
+    delete draft.tiles[i].elevatedTurn;
+    draft.money += check.refund;
+    draft.monthSpend = Math.max(0, draft.monthSpend - check.refund);
+    return { ok: true, state: draft, message: check.refund > 0 ? `高架線路を外しました +${yen(check.refund)}` : "高架線路を外しました" };
+  }
   if (!b) {
     // 地上に何もないマスの地下鉄：トンネルを埋める
     delete draft.tiles[i].subway;
@@ -324,8 +375,8 @@ export function demolish(state: GameState, i: number): ActionResult {
     return { ok: true, state: draft, message: "踏切の線路を撤去しました（道路は残ります）" };
   }
   if (isTrackStation(b.type)) {
-    // 駅を撤去しても線路は残す
-    draft.tiles[a].building = newBuilding("rail", 1, draft.turn);
+    // 駅を撤去しても線路は残す（高架の駅は高架だけが残る）
+    draft.tiles[a].building = draft.tiles[a].elevated ? null : newBuilding("rail", 1, draft.turn);
     draft.money += check.refund;
     if (b.builtTurn === draft.turn) draft.monthSpend = Math.max(0, draft.monthSpend - check.refund);
     return { ok: true, state: draft, message: `${name}を撤去しました（線路は残ります）${check.refund > 0 ? ` +${yen(check.refund)}` : ""}` };

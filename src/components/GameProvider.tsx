@@ -12,6 +12,9 @@ import {
   anchorOf,
   reclaim,
   dragDemolishable,
+  hasGroundTrack,
+  isTrackStation,
+  isRoad,
   isUpgradeTarget,
   isZone,
   placeZones,
@@ -194,6 +197,8 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   const stateRef = useRef<GameState | null>(null);
   const idRef = useRef(0);
   const strokeError = useRef(false);
+  /** なぞって線路を敷いたとき、建物があって飛ばしたマスの数（高架線路の案内に使う） */
+  const strokeRailSkipped = useRef(0);
 
   const analysis = useMemo(() => (state ? analyzeCity(state) : null), [state]);
 
@@ -252,7 +257,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     setOverlay((o) => {
       if (cov && cov !== "landmark") return cov as Overlay;
       // 線路・鉄道駅を選んだら路線図を表示
-      if (t === "rail" || t === "railStation" || t === "freightStation" || t === "subway" || t === "subwayStation") return "lines";
+      if (t === "rail" || t === "elevated" || t === "railStation" || t === "freightStation" || t === "subway" || t === "subwayStation") return "lines";
       return RANGE_OVERLAYS.includes(o) || o === "lines" ? "none" : o;
     });
   }, []);
@@ -327,7 +332,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       if (tool === "bulldoze") {
         const b = cur.tiles[i]?.building;
         // 地下鉄のトンネルだけのマスは、なぞって撤去しない（1マスずつタップで埋める）
-        if (!b && (painting || !cur.tiles[i]?.subway)) return;
+        if (!b && (painting || !(cur.tiles[i]?.subway || cur.tiles[i]?.elevated))) return;
         if (painting && b && !dragDemolishable(b.type)) return; // 公共施設・大型施設はドラッグでは壊さない
         const before = cur.money;
         const next = apply((s) => demolish(s, i), { silent: painting && strokeError.current, stroke: true });
@@ -353,7 +358,16 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       if (painting && !BUILDINGS[tool].paintable) return;
       // ドラッグ中は、すでに何か建っているマスを黙ってスキップする（大通りへの置き換え・踏切は除く）
       const existing = cur.tiles[i]?.building;
-      if (painting && existing && !isUpgradeTarget(tool, existing)) return;
+      // なぞって高架をのばすとき、もう高架のあるマスは黙って飛ばす
+      if (painting && tool === "elevated" && cur.tiles[i]?.elevated) return;
+      if (painting && existing && !isUpgradeTarget(tool, existing)) {
+        if (tool === "rail" && !isRoad(existing.type) && !hasGroundTrack(existing)) strokeRailSkipped.current++;
+        return;
+      }
+      // 高架の駅で、育った家（Lv2以上）を建て替えるときは確かめる
+      if (!painting && isTrackStation(tool) && cur.tiles[i]?.elevated && existing && isZone(existing.type) && existing.level >= 2) {
+        if (!window.confirm(`${levelName(existing.type, existing.level)}を立ち退いて、${BUILDINGS[tool].name}に建て替えます。よろしいですか？`)) return;
+      }
       const before = cur.money;
       const next = apply((s) => placeBuilding(s, tool, i), { silent: painting && strokeError.current, stroke: true });
       if (!next) {
@@ -384,7 +398,9 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   const endStroke = useCallback(() => {
     strokeError.current = false;
     strokeSnapshot.current = false;
-  }, []);
+    if (strokeRailSkipped.current > 0) toast(`💡 建物のある${strokeRailSkipped.current}マスは飛ばしました。家や道路を壊さずに通すなら「高架線路」が便利です`, "info");
+    strokeRailSkipped.current = 0;
+  }, [toast]);
 
   // 取り消しの履歴は ref でも持ち、素早く続けて押しても1つずつ戻るようにする
   const undoRef = useRef<GameState[]>([]);

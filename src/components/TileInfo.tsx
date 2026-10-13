@@ -34,6 +34,9 @@ import {
   busStyle,
   lineStyle,
   hasStation,
+  besideGroundTrack,
+  isTrackStation,
+  removeElevated,
   landTaxFactor,
   landValueContext,
   landValueFactors,
@@ -112,7 +115,7 @@ function LineRows({ state, a, i }: { state: GameState; a: CityAnalysis; i: numbe
       <Row label="電車">{line.working ? <span className="text-emerald-600">✓ 走っている（効き目 {Math.round(line.strength * 100)}%）</span> : <span className="text-amber-600">✗ まだ走っていない</span>}</Row>
       {!line.working && (
         <p className="mt-1 rounded-xl bg-amber-50 p-2 text-[11px] font-bold leading-relaxed text-amber-800">
-          {!hasStation(line) ? (line.tiles.some((j) => state.tiles[j].subway) ? "Ⓜ️ トンネルの上の空き地（道路に面した場所）に地下鉄駅を置くと電車が走ります。" : "🚉 線路の上（道路に面した場所）に鉄道駅か貨物駅を置くと電車が走ります。") : line.tiles.every((j) => state.tiles[j].subway) ? "🚇 トンネルをのばして、ほかの地下鉄駅か線路につなぐと電車が走ります。" : "🛤️ 線路をのばして、ほかの駅か地図の端（となり町）につなぐと電車が走ります。"}
+          {!hasStation(line) ? (line.tiles.every((j) => state.tiles[j].elevated || state.tiles[j].subway) && line.tiles.some((j) => state.tiles[j].elevated) ? "🚉 高架の下の、道路に面した空き地か住宅・お店・工場の場所に鉄道駅を置くと電車が走ります。" : line.tiles.some((j) => state.tiles[j].subway) ? "Ⓜ️ トンネルの上の空き地（道路に面した場所）に地下鉄駅を置くと電車が走ります。" : "🚉 線路の上（道路に面した場所）に鉄道駅か貨物駅を置くと電車が走ります。") : line.tiles.every((j) => state.tiles[j].subway) ? "🚇 トンネルをのばして、ほかの地下鉄駅か線路につなぐと電車が走ります。" : "🛤️ 線路をのばして、ほかの駅か地図の端（となり町）につなぐと電車が走ります。"}
         </p>
       )}
     </>
@@ -202,7 +205,7 @@ export function TileInfo({ onClose }: { onClose: () => void }) {
 
   const roadStatus = b && !isRoad(b.type) && b.type !== "cityHall" && (
     <Row label="道路">
-      {!a.net.roadAccess[i] ? <span className="text-rose-600">⛔ 道路に面していない</span> : !a.net.connected[i] ? <span className="text-amber-600">⚠️ 役所につながっていない</span> : <span className="text-emerald-600">✓ 接続OK</span>}
+      {!a.net.roadAccess[i] ? <span className="text-rose-600">⛔ 道路に面していない{besideGroundTrack(state, i) ? "（線路は入口にならない）" : ""}</span> : !a.net.connected[i] ? <span className="text-amber-600">⚠️ 役所につながっていない</span> : <span className="text-emerald-600">✓ 接続OK</span>}
     </Row>
   );
 
@@ -439,9 +442,32 @@ export function TileInfo({ onClose }: { onClose: () => void }) {
   return (
     <div>
       {body}
+      {b && !isRoad(b.type) && !a.net.roadAccess[i] && besideGroundTrack(state, i) && (
+        <p className="mt-2 rounded-xl bg-rose-50 p-2 text-[11px] font-bold leading-relaxed text-rose-700">
+          🛤️ 線路は道路の代わりにならないので、線路と反対側に道路を通しましょう。街なかに線路を通すときは、家や道路をそのまま残せる「高架線路」が便利です。
+        </p>
+      )}
+      {tile.elevated && (
+        <div className="mt-2 flex items-center gap-2 rounded-xl bg-slate-100 p-2 text-[11px] font-bold text-slate-600">
+          <span className="min-w-0 flex-1">
+            🌉 上を高架線路が通っています{a.rail.lines[a.rail.lineOf[i]] ? `（${lineStyle(state, a.rail, a.rail.lineOf[i]).name}）` : ""}。真下ととなりには電車の音が届きます。{b && !isTrackStation(b.type) ? "下の「撤去」は建物だけを壊し、高架は残ります。" : ""}
+          </span>
+          {!isTrackStation(b?.type) && (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                runAction((s) => removeElevated(s, i));
+              }}
+            >
+              高架を外す{tile.elevatedTurn === state.turn ? `（+${formatYen(BUILDINGS.elevated.cost, { compact: true })}）` : "（返金なし）"}
+            </Button>
+          )}
+        </div>
+      )}
       {tile.subway && (
         <p className="mt-2 rounded-xl bg-slate-100 p-2 text-[11px] font-bold text-slate-600">
-          🚇 地下に地下鉄のトンネルが通っています{a.rail.lines[a.rail.lineOf[i]] ? `（${lineStyle(state, a.rail, a.rail.lineOf[i]).name}）` : ""}。{b ? "" : "撤去ツールでトンネルを埋められます。"}
+          🚇 地下に地下鉄のトンネルが通っています{a.rail.lines[a.rail.lineOf[i]] ? `（${lineStyle(state, a.rail, a.rail.lineOf[i]).name}）` : ""}。{b ? "" : tile.elevated ? "撤去ツールでは先に高架が外れ、もう一度でトンネルを埋められます。" : "撤去ツールでトンネルを埋められます。"}
         </p>
       )}
       {rebuildTo.length > 0 && (
