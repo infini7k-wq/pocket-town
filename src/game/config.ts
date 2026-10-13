@@ -55,7 +55,7 @@ export const POPULATION = {
 /** 商業が支えられる雇用 = base + 人口 × perCapita（× 需要倍率） */
 export const COM_SUPPORT = { base: 20, perCapita: 0.22, plazaBonus: 60, stationBonus: 80, railStationBonus: 40, landmarkBonus: 150 };
 /** 工業が支えられる雇用 = base + 人口 × perCapita（× 需要倍率） */
-export const IND_SUPPORT = { base: 60, perCapita: 0.25, freightBonus: 60 };
+export const IND_SUPPORT = { base: 60, perCapita: 0.25 };
 
 // ---------- お店の大きさ ----------
 /** 商業が次のレベルに育つのに必要な「周り4マスに住む人」（index = 次のレベル） */

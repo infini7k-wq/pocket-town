@@ -295,22 +295,6 @@ export const BUILDINGS: Record<BuildingType, BuildingDef> = {
     color: "#7e57c2",
     trips: 12,
   },
-  freightStation: {
-    type: "freightStation",
-    name: "貨物駅",
-    description: "駅と同じく、線路の上の道路に面した場所に置く。電車が走る路線にあると、近くの工場のトラックが貨物列車に変わる",
-    category: "service",
-    emoji: ["", "🚛"],
-    cost: 1_200_000,
-    upkeep: 60_000,
-    jobs: ALL_LEVELS(10),
-    effect: "建物から5マス以内の工場の車を半分にし、工場の注文も増える（街全体で+60人分）",
-    unlockRank: "city",
-    removable: true,
-    paintable: false,
-    color: "#a16207",
-    trips: 10,
-  },
   station: {
     type: "station",
     name: "バスターミナル",
@@ -595,7 +579,6 @@ export const BUILD_ORDER: BuildingType[] = [
   "landmark",
   "rail",
   "railStation",
-  "freightStation",
   ...PROJECTS,
 ];
 
@@ -619,9 +602,9 @@ export function isPassengerStation(type: BuildingType | undefined): boolean {
   return type === "railStation";
 }
 
-/** 線路の上に置く駅（駅・貨物駅） */
+/** 線路の上に置く駅 */
 export function isTrackStation(type: BuildingType | undefined): boolean {
-  return type === "railStation" || type === "freightStation";
+  return type === "railStation";
 }
 
 /** なぞって撤去できるもの（ゾーン・道路・線路。公共施設や大型施設はドラッグでは壊さない） */

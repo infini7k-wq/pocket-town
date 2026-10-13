@@ -253,7 +253,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     setOverlay((o) => {
       if (cov && cov !== "landmark") return cov as Overlay;
       // 線路・駅を選んだら路線図を表示
-      if (t === "rail" || t === "railStation" || t === "freightStation") return "lines";
+      if (t === "rail" || t === "railStation") return "lines";
       return RANGE_OVERLAYS.includes(o) || o === "lines" ? "none" : o;
     });
   }, []);

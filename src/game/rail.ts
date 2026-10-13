@@ -16,9 +16,6 @@ export const RAIL = {
   fare: 120,
   /** 川や海の上に線路を引く費用（1マス） */
   bridgeCost: 250_000,
-  /** 貨物駅の効き目が届く範囲（マス）と、工場の車を減らす割合 */
-  freightRadius: 5,
-  freightCut: 0.5,
   /** 駅が育つのに必要な1か月の乗客（index = 次のレベル） */
   stationRiders: [0, 0, 150, 400],
 };
@@ -31,8 +28,6 @@ export interface RailLine {
   tiles: number[];
   /** 旅客の駅 */
   stations: number[];
-  /** 貨物駅 */
-  freight: number[];
   /** 地図の端（となり町）につながっている */
   edge: boolean;
   /** 完成した新幹線駅につながっている */
@@ -51,8 +46,6 @@ export interface RailNetwork {
   ride: Float32Array;
   /** マスごとの、いちばん効いている駅（-1 = なし。乗客をどの駅に数えるか） */
   rideFrom: Int32Array;
-  /** 電車が走る貨物駅の範囲内のマス（1 = 工場の車が減る） */
-  freightArea: Uint8Array;
 }
 
 export interface BusRoutes {
@@ -96,7 +89,7 @@ export function computeRailNetwork(s: GameState): RailNetwork {
   for (let start = 0; start < n; start++) {
     if (lineOf[start] !== -1 || !isTrackTile(s, start)) continue;
     const id = lines.length;
-    const line: RailLine = { id, tiles: [], stations: [], freight: [], edge: false, shinkansen: false, working: false, strength: 0 };
+    const line: RailLine = { id, tiles: [], stations: [], edge: false, shinkansen: false, working: false, strength: 0 };
     const queue = [start];
     lineOf[start] = id;
     while (queue.length) {
@@ -104,7 +97,6 @@ export function computeRailNetwork(s: GameState): RailNetwork {
       line.tiles.push(i);
       const b = s.tiles[i].building;
       if (isPassengerStation(b?.type)) line.stations.push(i);
-      if (b?.type === "freightStation") line.freight.push(i);
       // 新幹線駅（2×2 のどのマスでも）
       const anchor = b?.type === "annex" ? b.anchor : i;
       const bullet = anchor !== undefined ? s.tiles[anchor]?.building : undefined;
@@ -118,15 +110,14 @@ export function computeRailNetwork(s: GameState): RailNetwork {
         }
       }
     }
-    const nodes = line.stations.length + line.freight.length + (line.edge ? 1 : 0) + (line.shinkansen ? 1 : 0);
-    line.working = line.stations.length + line.freight.length >= 1 && nodes >= 2;
+    const nodes = line.stations.length + (line.edge ? 1 : 0) + (line.shinkansen ? 1 : 0);
+    line.working = line.stations.length >= 1 && nodes >= 2;
     line.strength = line.working ? Math.min(1, 0.4 + 0.15 * nodes) : 0;
     lines.push(line);
   }
   // 電車が走る駅のまわりの効き目（駅に近いほど強い）
   const ride = new Float32Array(n);
   const rideFrom = new Int32Array(n).fill(-1);
-  const freightArea = new Uint8Array(n);
   for (const line of lines) {
     if (!line.working) continue;
     for (const st of line.stations) {
@@ -142,26 +133,24 @@ export function computeRailNetwork(s: GameState): RailNetwork {
         }
       });
     }
-    for (const f of line.freight) forEachInRadius(f, RAIL.freightRadius, s.width, s.height, (j) => (freightArea[j] = 1));
   }
-  return { lineOf, lines, ride, rideFrom, freightArea };
+  return { lineOf, lines, ride, rideFrom };
 }
 
-/** 駅の効き目の範囲（旅客の駅は乗客の範囲、貨物駅は工場の範囲。駅でなければ 0） */
+/** 駅の効き目の範囲（駅でなければ 0） */
 export function stationRange(type: string | undefined, level = 1): number {
-  if (type === "freightStation") return RAIL.freightRadius;
   if (type === "railStation") return stationRadius(level);
   return 0;
 }
 
-/** 駅の種類（駅・貨物駅） */
+/** 駅か */
 export function isStationType(t: string | undefined): boolean {
-  return t === "railStation" || t === "freightStation";
+  return t === "railStation";
 }
 
-/** 駅（旅客・貨物）がある路線か */
-export function hasStation(line: Pick<RailLine, "stations" | "freight">): boolean {
-  return line.stations.length + line.freight.length > 0;
+/** 駅がある路線か */
+export function hasStation(line: Pick<RailLine, "stations">): boolean {
+  return line.stations.length > 0;
 }
 
 /** 旅客の駅の効き目が届く範囲（駅ビルは1マス広い） */
@@ -169,7 +158,7 @@ export function stationRadius(level: number): number {
   return RAIL.radius + (level >= 3 ? 1 : 0);
 }
 
-/** 駅（駅・貨物駅）が動いているか（電車が走る路線にあるか） */
+/** 駅が動いているか（電車が走る路線にあるか） */
 export function stationWorking(rail: RailNetwork, i: number): boolean {
   const id = rail.lineOf[i];
   return id >= 0 && !!rail.lines[id]?.working;

@@ -128,11 +128,11 @@ interface LegacyRailTile {
  */
 export function migrateRailTracks(data: GameState): GameState {
   // 住民の声などに残っている、今はない道具（高架線路・地下鉄・地下鉄駅）を新しい道具に読みかえる
-  const toolMap: Record<string, BuildingType> = { elevated: "rail", subway: "rail", subwayStation: "railStation" };
+  const toolMap: Record<string, BuildingType> = { elevated: "rail", subway: "rail", subwayStation: "railStation", freightStation: "railStation" };
   const fixTool = <T extends { tool?: string }>(v: T): T => (v.tool && toolMap[v.tool] ? { ...v, tool: toolMap[v.tool] } : v);
   if ((data.voices ?? []).some((v) => v.tool && toolMap[v.tool])) data = { ...data, voices: data.voices.map(fixTool) };
   const legacy = data.tiles as unknown as LegacyRailTile[];
-  const needs = legacy.some((t) => t.subway || t.elevated || t.building?.rail || t.building?.type === "rail" || t.building?.type === "subwayStation");
+  const needs = legacy.some((t) => t.subway || t.elevated || t.building?.rail || t.building?.type === "rail" || t.building?.type === "subwayStation" || t.building?.type === "freightStation");
   if (!needs) return data;
   const tiles = legacy.map((t) => {
     const out: LegacyRailTile & { terrain?: Tile["terrain"]; track?: boolean } = { ...t };
@@ -146,8 +146,9 @@ export function migrateRailTracks(data: GameState): GameState {
         delete b.rail;
         track = true;
       }
-      if (b.type === "subwayStation") b.type = "railStation";
-      if (b.type === "railStation" || b.type === "freightStation") track = true;
+      // 地下鉄駅・貨物駅は、普通の駅に
+      if (b.type === "subwayStation" || b.type === "freightStation") b.type = "railStation";
+      if (b.type === "railStation") track = true;
       out.building = b;
     }
     delete out.subway;

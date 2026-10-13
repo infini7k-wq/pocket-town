@@ -55,7 +55,6 @@ export function computeEmployment(state: GameState, net: RoadNetwork, fx: Effect
   let stations = 0;
   let landmarks = 0;
   let railStations = 0;
-  let freightStations = 0;
 
   state.tiles.forEach((tile, i) => {
     const b = tile.building;
@@ -72,9 +71,8 @@ export function computeEmployment(state: GameState, net: RoadNetwork, fx: Effect
     else if (BUILDINGS[b.type].jobs.length) serviceJobs += jobs;
     if (b.type === "plaza") plazas++;
     if (b.type === "station") stations++;
-    // 電車が走る駅：駅前に買い物客が集まる（大きな駅・駅ビルほど多い）。貨物駅は工場の注文が増える
+    // 電車が走る駅：駅前に買い物客が集まる（大きな駅・駅ビルほど多い）
     if (isPassengerStation(b.type) && b.level > 0 && rail && stationWorking(rail, i)) railStations += b.level;
-    if (b.type === "freightStation" && rail && stationWorking(rail, i)) freightStations++;
     if (b.type === "landmark") landmarks++;
   });
 
@@ -85,7 +83,7 @@ export function computeEmployment(state: GameState, net: RoadNetwork, fx: Effect
       bizTaxFactor(state.taxes.commercial) *
       (1 + fx.comDemand) +
     fx.extraComJobs;
-  const indSupport = (IND_SUPPORT.base + pop * IND_SUPPORT.perCapita + freightStations * IND_SUPPORT.freightBonus + fx.indSupport) * state.profile.indDemand * bizTaxFactor(state.taxes.industrial) * (1 + fx.indDemand);
+  const indSupport = (IND_SUPPORT.base + pop * IND_SUPPORT.perCapita + fx.indSupport) * state.profile.indDemand * bizTaxFactor(state.taxes.industrial) * (1 + fx.indDemand);
   const comEfficiency = comJobs > 0 ? clamp(comSupport / comJobs, 0.3, 1) : 1;
   const indEfficiency = indJobs > 0 ? clamp(indSupport / indJobs, 0.3, 1) : 1;
 

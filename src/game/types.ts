@@ -24,7 +24,6 @@ export type BuildingType =
   /** 鉄道 */
   | "rail"
   | "railStation"
-  | "freightStation"
   /** 町の個性ごとの専用プロジェクト */
   | "forestPark"
   | "kombinat"

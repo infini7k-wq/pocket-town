@@ -665,7 +665,6 @@ function TransitCard() {
                 <span style={{ color: st.color }}>■</span> {st.name}
                 <span className="ml-1 text-slate-400">
                   {l.stations.length > 0 ? `駅${l.stations.length}` : ""}
-                  {l.freight.length > 0 ? `${l.stations.length > 0 ? "・" : ""}貨物駅${l.freight.length}` : ""}
                   {l.edge ? "・となり町" : ""}
                   {l.shinkansen ? "・新幹線" : ""}
                 </span>

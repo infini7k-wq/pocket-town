@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { demolish, placeBuilding, placeZones } from "../actions";
+import { placeZones } from "../actions";
 import { analyzeCity } from "../analysis";
 import { landTaxFactor } from "../landvalue";
 import { cityProblems } from "../problems";
-import { RAIL, computeRailNetwork, stationWorking } from "../rail";
+import { RAIL } from "../rail";
 import { advanceMonth } from "../simulation";
 import type { GameState } from "../types";
-import { blankState, idx, put, roadCol, roadRow, trackRow, unwrap } from "./helpers";
+import { blankState, idx, put, roadCol, roadRow, trackRow } from "./helpers";
 
 /** 市の町：(0..15,3) に線路、(0..15,4) に道路 */
 function railTown(): GameState {
@@ -34,23 +34,7 @@ describe("地価", () => {
   });
 });
 
-describe("貨物駅と駅の成長", () => {
-  it("貨物駅は線路の上に置き、電車が走ると近くの工場の車が減る", () => {
-    const s = railTown();
-    for (let x = 2; x <= 6; x++) put(s, x, 5, "industrial", 2);
-    for (let x = 8; x <= 15; x++) put(s, x, 5, "residential", 2, 60); // 働き手
-    const before = analyzeCity(s);
-    const st = unwrap(placeBuilding(s, "freightStation", idx(s, 4, 3)));
-    expect(stationWorking(computeRailNetwork(st), idx(s, 4, 3))).toBe(true); // 地図の端につながっている
-    const after = analyzeCity(st);
-    const load = (a: typeof before) => a.traffic.load.reduce((p, v) => p + v, 0);
-    expect(load(after)).toBeLessThan(load(before));
-    expect(after.employment.indSupport).toBeGreaterThan(before.employment.indSupport);
-    const back = unwrap(demolish(st, idx(s, 4, 3)));
-    expect(back.tiles[idx(s, 4, 3)].building).toBeNull();
-    expect(back.tiles[idx(s, 4, 3)].track).toBe(true);
-  });
-
+describe("駅の成長", () => {
   it("乗客の多い駅は、大きな駅 → 駅ビルに育つ（1か月に1段ずつ）", () => {
     const s = railTown();
     for (let x = 0; x < 16; x++) if (x !== 7) put(s, x, 5, "residential", 2, 60);

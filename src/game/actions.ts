@@ -174,7 +174,7 @@ export function checkPlacement(state: GameState, type: BuildingType, i: number):
     const existing = tile.building;
     const roadSide = neighbors4(i, state.width, state.height).some((j) => isRoad(state.tiles[j].building?.type));
     if (isTrackStation(type)) {
-      // 駅・貨物駅は線路の上の、道路に面した空き地か住宅・お店・工場の場所に置く（建物は駅に建て替わる）
+      // 駅は線路の上の、道路に面した空き地か住宅・お店・工場の場所に置く（建物は駅に建て替わる）
       if (!tile.track) return { ok: false, cost, reason: `${def.name}は線路の上に置いてください（先に線路を引く）` };
       if (existing && !isZone(existing.type)) return { ok: false, cost, reason: isRoad(existing.type) ? "駅は道路の上には置けません（となりの空き地か家の場所に置いてください）" : `${def.name}は、空き地か住宅・お店・工場の場所に置けます` };
       if (!roadSide) return { ok: false, cost, reason: `${def.name}は道路に面した場所に置いてください` };

@@ -106,7 +106,7 @@ function LineRows({ state, a, i }: { state: GameState; a: CityAnalysis; i: numbe
   const line = a.rail.lines[id];
   if (!line) return null;
   const st = lineStyle(state, a.rail, id);
-  const links = [line.stations.length > 0 && `駅${line.stations.length}`, line.freight.length > 0 && `貨物駅${line.freight.length}`, line.edge && "となり町", line.shinkansen && "新幹線駅"].filter(Boolean).join("・");
+  const links = [line.stations.length > 0 && `駅${line.stations.length}`, line.edge && "となり町", line.shinkansen && "新幹線駅"].filter(Boolean).join("・");
   return (
     <>
       <Row label="路線">
@@ -116,7 +116,7 @@ function LineRows({ state, a, i }: { state: GameState; a: CityAnalysis; i: numbe
       <Row label="電車">{line.working ? <span className="text-emerald-600">✓ 走っている（効き目 {Math.round(line.strength * 100)}%）</span> : <span className="text-amber-600">✗ まだ走っていない</span>}</Row>
       {!line.working && (
         <p className="mt-1 rounded-xl bg-amber-50 p-2 text-[11px] font-bold leading-relaxed text-amber-800">
-          {!hasStation(line) ? "🚉 線路の上の、道路に面した空き地か家の場所に駅（か貨物駅）を置くと電車が走ります。" : "🛤️ 線路をのばして、ほかの駅か地図の端（となり町）につなぐと電車が走ります。"}
+          {!hasStation(line) ? "🚉 線路の上の、道路に面した空き地か家の場所に駅を置くと電車が走ります。" : "🛤️ 線路をのばして、ほかの駅か地図の端（となり町）につなぐと電車が走ります。"}
         </p>
       )}
     </>
@@ -369,12 +369,10 @@ export function TileInfo({ onClose }: { onClose: () => void }) {
     // バス停は路線になると範囲が広がる。駅は電車の効き目の範囲
     const station = isStationType(b.type);
     const radius = b.type === "busStop" ? busStopBoost(a.busRoutes, state, i).radius : station ? stationRange(b.type, b.level) : (def.coverage?.radius ?? 0);
-    let factories = 0;
     if (def.coverage || station) {
       forEachInRange(i, def.size ?? 1, radius, state.width, state.height, (j) => {
         const t = state.tiles[j].building;
         if (t?.type === "residential") covered += t.occupants;
-        if (t?.type === "industrial" && t.level > 0) factories++;
       });
     }
     const riders = Math.round(a.traffic.stationRiders.get(i) ?? 0);
@@ -393,8 +391,7 @@ export function TileInfo({ onClose }: { onClose: () => void }) {
         <div className="mt-1">
           {roadStatus}
           {(def.coverage || station) && <Row label="効果範囲">{radius}マス</Row>}
-          {(def.coverage || station) && b.type !== "freightStation" && <Row label="範囲内の住民">{covered.toLocaleString("ja-JP")}人</Row>}
-          {b.type === "freightStation" && <Row label="範囲内の工場">{factories}棟</Row>}
+          {(def.coverage || station) && <Row label="範囲内の住民">{covered.toLocaleString("ja-JP")}人</Row>}
           {station && <LineRows state={state} a={a} i={i} />}
           {isPassengerStation(b.type) && (
             <Row label="乗客">

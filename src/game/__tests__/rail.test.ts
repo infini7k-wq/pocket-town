@@ -160,7 +160,7 @@ describe("保存と土地の買い足し", () => {
     expect(loaded?.tiles.filter((t) => t.track)).toHaveLength(16);
   });
 
-  it("以前の版の線路（地上・踏切・高架・地下鉄）と地下鉄駅は、新しい線路と駅に変わる", () => {
+  it("以前の版の線路（地上・踏切・高架・地下鉄）と地下鉄駅・貨物駅は、新しい線路と駅に変わる", () => {
     const s = railTown();
     s.tiles.forEach((t) => delete t.track);
     const raw = JSON.parse(serialize(s));
@@ -169,6 +169,7 @@ describe("保存と土地の買い足し", () => {
     raw.tiles[idx(s, 3, 3)].elevated = true;
     raw.tiles[idx(s, 4, 3)].subway = true;
     raw.tiles[idx(s, 5, 3)].building = { type: "subwayStation", level: 2, occupants: 0, growth: 0, builtTurn: 0, paid: 0, abandoned: false };
+    raw.tiles[idx(s, 6, 3)].building = { type: "freightStation", level: 1, occupants: 0, growth: 0, builtTurn: 0, paid: 0, abandoned: false };
     const loaded = parseSave(JSON.stringify(raw))!;
     expect(loaded.tiles[idx(s, 1, 3)].building).toBeNull();
     expect(loaded.tiles[idx(s, 1, 3)].track).toBe(true);
@@ -179,7 +180,8 @@ describe("保存と土地の買い足し", () => {
     expect(loaded.tiles[idx(s, 4, 3)].track).toBe(true);
     expect(loaded.tiles[idx(s, 5, 3)].building).toMatchObject({ type: "railStation", level: 2 });
     expect(loaded.tiles[idx(s, 5, 3)].track).toBe(true);
-    expect(JSON.stringify(loaded)).not.toMatch(/elevated|subway/);
+    expect(loaded.tiles[idx(s, 6, 3)].building?.type).toBe("railStation"); // 貨物駅も普通の駅に
+    expect(JSON.stringify(loaded)).not.toMatch(/elevated|subway|freight/);
   });
 
   it("地図の端まで来ていた線路は、土地を買い足すと新しい端まで延びる", () => {

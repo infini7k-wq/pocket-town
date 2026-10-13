@@ -56,9 +56,7 @@ export function tripSplit(state: GameState, i: number, emp: Employment, coverage
   // 駅のそば：さらに電車に乗りかえる（バスと重ねても7割減まで）
   const train = RAIL.cut * (rail?.ride[i] ?? 0);
   const remain = Math.max(train > 0 ? RAIL.floor : 0, (1 - bus) * (1 - train));
-  // 貨物駅のそばの工場：トラックが貨物列車に変わる
-  const freight = b.type === "industrial" && rail?.freightArea[i] ? 1 - RAIL.freightCut : 1;
-  const base = trips * freight * Math.max(0.2, 1 + fx.traffic);
+  const base = trips * Math.max(0.2, 1 + fx.traffic);
   // 電車の乗客：バスは駅へ人を運ぶので、バスがあっても半分は電車に乗る（車が減る量の上限とは別に数える）
   return { car: base * remain, riders: base * train * (1 - 0.5 * bus) };
 }
