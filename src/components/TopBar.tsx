@@ -15,20 +15,21 @@ const STATUS_STYLE: Record<Status, string> = {
   neutral: "text-slate-800",
 };
 
-function Kpi({ icon, label, value, sub, status = "neutral", onClick }: { icon: string; label: string; value: string; sub?: React.ReactNode; status?: Status; onClick?: () => void }) {
+function Kpi({ icon, label, value, sub, status = "neutral", onClick, className }: { icon: string; label: string; value: string; sub?: React.ReactNode; status?: Status; onClick?: () => void; className?: string }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className="flex min-w-0 items-center gap-1.5 rounded-xl bg-white/90 px-2 py-1.5 text-left ring-1 ring-slate-900/5 transition hover:bg-white sm:px-2.5"
+      className={cx("flex min-w-0 items-center gap-1.5 rounded-xl bg-white/90 px-2 py-1.5 text-left ring-1 ring-slate-900/5 transition hover:bg-white sm:px-2.5", className)}
     >
-      <span className="hidden text-lg leading-none xl:inline" aria-hidden>
+      <span className="hidden text-lg leading-none 2xl:inline" aria-hidden>
         {icon}
       </span>
       <span className="min-w-0">
-        <span className="block truncate text-[10px] font-bold leading-tight text-slate-500"><span className="xl:hidden">{icon}</span>{label}</span>
-        <span className={cx("tabular block truncate text-[13px] font-black leading-tight sm:text-sm", STATUS_STYLE[status])}>{value}</span>
-        {sub && <span className="tabular block truncate text-[10px] font-bold leading-tight">{sub}</span>}
+        <span className="block truncate text-[10px] font-bold leading-tight text-slate-500"><span className="2xl:hidden">{icon}</span>{label}</span>
+        {/* 数字は省略せず、いつでも全部見えるようにする（資金などはゲームの進行に大事なので、カードの幅を広げてある） */}
+        <span className={cx("tabular block whitespace-nowrap text-[13px] font-black leading-tight sm:text-sm", STATUS_STYLE[status])}>{value}</span>
+        {sub && <span className="tabular block text-[10px] font-bold leading-tight [overflow-wrap:anywhere]">{sub}</span>}
       </span>
     </button>
   );
@@ -100,7 +101,7 @@ export function TopBar() {
 
         <div className="flex flex-1 items-center gap-3">
         {/* KPI */}
-        <div className="grid flex-1 grid-cols-4 gap-1.5 md:grid-cols-8">
+        <div className="grid flex-1 grid-cols-[1fr_1.5fr_1.5fr_1fr] gap-1.5 md:grid-cols-[1fr_1.45fr_1.6fr_1fr_1fr_1fr_1fr_1.25fr]">
           <Kpi
             icon="👥"
             label="人口"
@@ -123,11 +124,12 @@ export function TopBar() {
             onClick={() => openPanel("finance")}
           />
           <Kpi icon="😊" label="満足度" value={`${a.cityHappiness}%`} status={level(a.cityHappiness, 70, 50)} onClick={() => showOverlay("happiness")} />
-          <Kpi icon="💼" label="雇用率" value={`${Math.round(emp.employmentRate * 100)}%`} status={level(emp.employmentRate * 100, 93, 85)} sub={emp.jobFillRate < 0.9 ? <span className="text-amber-600">人手不足</span> : undefined} onClick={() => openPanel("city")} />
-          <Kpi icon="🚗" label="交通混雑" value={`${a.congestion}%`} status={a.congestion < 15 ? "good" : a.congestion < 35 ? "warn" : "bad"} onClick={() => showOverlay("traffic")} />
-          <Kpi icon="🌿" label="環境" value={`${a.cityEnvironment}`} status={level(a.cityEnvironment, 65, 45)} onClick={() => showOverlay("env")} />
+          <Kpi className="order-7 md:order-none" icon="💼" label="雇用率" value={`${Math.round(emp.employmentRate * 100)}%`} status={level(emp.employmentRate * 100, 93, 85)} sub={emp.jobFillRate < 0.9 ? <span className="text-amber-600">人手不足</span> : undefined} onClick={() => openPanel("city")} />
+          <Kpi className="order-5 md:order-none" icon="🚗" label="混雑" value={`${a.congestion}%`} status={a.congestion < 15 ? "good" : a.congestion < 35 ? "warn" : "bad"} onClick={() => showOverlay("traffic")} />
+          <Kpi className="order-8 md:order-none" icon="🌿" label="環境" value={`${a.cityEnvironment}`} status={level(a.cityEnvironment, 65, 45)} onClick={() => showOverlay("env")} />
           {state.politics ? (
             <Kpi
+              className="order-6 md:order-none"
               icon="🗳️"
               label="支持率"
               value={`${Math.round(state.politics.approval)}%`}
@@ -136,7 +138,7 @@ export function TopBar() {
               onClick={() => openPolicy()}
             />
           ) : (
-            <Kpi icon="📜" label="政策" value="条例" onClick={() => openPolicy()} />
+            <Kpi className="order-6 md:order-none" icon="📜" label="政策" value="条例" onClick={() => openPolicy()} />
           )}
         </div>
 
